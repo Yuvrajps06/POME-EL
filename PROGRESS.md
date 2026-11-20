@@ -10,7 +10,7 @@
 - [x] Phase 6: Strategy Comparison & Evaluation Framework
 - [x] Phase 7: Sensitivity Analysis & Simulation Experiments
 - [x] Phase 8: Streamlit Dashboard Implementation
-- [ ] Phase 9: Documentation, Packaging & Final Verification
+- [x] Phase 9: Documentation, Packaging & Final Verification
 
 ## Decisions made
 
@@ -54,6 +54,10 @@
    - **Zero Logic Duplication**: All charts and analytics directly reuse existing functions from `src/data/eda.py`, `src/demand/`, `src/optimization/`, `src/experiments/comparison.py`, and `src/experiments/sensitivity.py`.
    - **Caching & High Performance**: Shared `@st.cache_data` and `@st.cache_resource` in `dashboard/utils.py` load precomputed simulation runs, elasticity estimates, and model weights in milliseconds.
    - **Methodological Transparency**: Enforced persistent banners displaying the active competitor mode and clear caveats that M5 contains no external competitor pricing.
+12. **Phase 9 Validation, Packaging & Research Documentation**:
+   - **Methodological Audit**: Verified zero violations of `CONTEXT.md` non-negotiable rules (clean mode labeling, exogenous cost inputs, chronological splits, observational elasticity caveats, bounded search grids).
+   - **End-to-End Reproducibility**: Implemented `scripts/run_pipeline.py` and root `Makefile` (`make pipeline`, `make test`, `make dashboard`).
+   - **Comprehensive Academic Report**: Authored `docs/REPORT.md` documenting dataset metrics, champion model evaluation, game theory formulations, 40-run simulation outcomes, sensitivity findings, and formal evaluation of Hypotheses H1–H5 using strictly verified empirical numbers.
 
 ## Example Calls for Each Strategy
 
@@ -238,4 +242,4 @@ print(f"Strategy C: Rec Price=${result_c.recommended_price:.2f}, Predicted Follo
 
 ## Known issues
 
-None. Phases 1–8 passing 47/47 unit tests cleanly. Dashboard tested and verified. Ready for Phase 9.
+None. All Phases 1–9 complete, fully tested (51/51 pytest passing), audited against methodological rules, and documented with end-to-end reproducibility.

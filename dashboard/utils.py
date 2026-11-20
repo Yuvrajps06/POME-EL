@@ -91,9 +91,10 @@ def load_linear_demand_parameters() -> pd.DataFrame:
 @st.cache_data
 def load_strategy_comparison_data() -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Load precomputed strategy comparison benchmark datasets."""
-    summary_path = EXPERIMENTS_DIR / "strategy_comparison_summary.csv"
-    traj_path = EXPERIMENTS_DIR / "strategy_trajectories.csv"
-    runs_path = EXPERIMENTS_DIR / "strategy_simulation_runs.csv"
+    exp_dir = DATA_PROCESSED_DIR / "experiments"
+    summary_path = exp_dir / "strategy_comparison_summary.csv"
+    traj_path = exp_dir / "strategy_trajectories.csv"
+    runs_path = exp_dir / "strategy_simulation_runs.csv"
 
     df_summary = pd.read_csv(summary_path) if summary_path.exists() else pd.DataFrame()
     df_traj = pd.read_csv(traj_path) if traj_path.exists() else pd.DataFrame()
@@ -105,12 +106,13 @@ def load_strategy_comparison_data() -> Tuple[pd.DataFrame, pd.DataFrame, pd.Data
 @st.cache_data
 def load_sensitivity_datasets() -> Dict[str, pd.DataFrame]:
     """Load precomputed Phase 7 sensitivity analysis sweep tables."""
+    exp_dir = DATA_PROCESSED_DIR / "experiments"
     files = {
-        "heatmap": EXPERIMENTS_DIR / "sensitivity_heatmap_strength_accuracy.csv",
-        "accuracy_curve": EXPERIMENTS_DIR / "sensitivity_accuracy_curve.csv",
-        "behaviors": EXPERIMENTS_DIR / "sensitivity_competitor_behaviors.csv",
-        "demand": EXPERIMENTS_DIR / "sensitivity_demand_slopes.csv",
-        "robustness": EXPERIMENTS_DIR / "sensitivity_robustness.csv",
+        "heatmap": exp_dir / "sensitivity_heatmap_strength_accuracy.csv",
+        "accuracy_curve": exp_dir / "sensitivity_accuracy_curve.csv",
+        "behaviors": exp_dir / "sensitivity_competitor_behaviors.csv",
+        "demand": exp_dir / "sensitivity_demand_slopes.csv",
+        "robustness": exp_dir / "sensitivity_robustness.csv",
     }
     dfs = {}
     for k, p in files.items():

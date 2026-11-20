@@ -92,14 +92,14 @@ def render() -> None:
     q1, q2 = st.columns(2)
     with q1:
         st.markdown(
-            """
+            r"""
             #### When does ML-aware pricing help?
             - When the competitor reacts responsively ($\ge 0.75$) and follows price leadership (`match` or `raise`).
             - When cross-price elasticity is high ($c \ge 0.50$), allowing margin expansion without share erosion.
             """
         )
         st.markdown(
-            """
+            r"""
             #### What is the accuracy threshold?
             - Symmetrically: ~60% accuracy to beat baseline.
             - Highly asymmetric: requires $\ge 75\%$ if errors are optimistic, but only ~50% if pessimistic.
@@ -107,7 +107,7 @@ def render() -> None:
         )
     with q2:
         st.markdown(
-            """
+            r"""
             #### When does it hurt?
             - In price-war regimes (`undercut`), where leader price increases surrender volume.
             - When competitor reaction is delayed ($\ge 3$ periods), leaving the leader exposed.
@@ -115,7 +115,7 @@ def render() -> None:
             """
         )
         st.markdown(
-            """
+            r"""
             #### How robust is the recommendation?
             - Very robust across unit cost levels ($C \in [\$0.65, \$1.05]$) and moderate demand volatility ($\sigma_d \le 2.0$).
             - Bounded price grids ($[0.70 P_{base}, 1.30 P_{base}]$) safeguard against model divergence.

@@ -13,7 +13,7 @@ from dashboard.utils import (
     load_elasticity_table,
     load_linear_demand_parameters,
 )
-from src.demand.elasticity import plot_elasticity_comparison, ELASTICITY_CAVEAT
+from src.demand.elasticity import plot_elasticity_comparison, OBSERVATIONAL_CAVEAT
 from src.demand.forecasting import plot_actual_vs_predicted
 
 
@@ -75,7 +75,7 @@ def render() -> None:
     st.subheader("3. Price Elasticity Estimates (Log-Log Econometric Regression)")
 
     st.warning(
-        f"**IMPORTANT METHODOLOGICAL CAVEAT (CONTEXT.md Rule #4)**:\n\n{ELASTICITY_CAVEAT}"
+        f"**IMPORTANT METHODOLOGICAL CAVEAT (CONTEXT.md Rule #4)**:\n\n{OBSERVATIONAL_CAVEAT}"
     )
 
     df_elast = load_elasticity_table()
