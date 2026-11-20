@@ -80,46 +80,92 @@ def optimize_ml_stackelberg(
         grid = np.linspace(grid_min, grid_max, int(num_steps))
 
     # 2. Evaluate grid anticipating ML-predicted follower response
-    records = []
-    best_profit = -np.inf
-    best_idx = 0
+    model_obj = competitor_model or ml_params.get("model")
+    if model_obj is None and target_accuracy is None:
+        from src.competitor.response_model import load_competitor_model
+        try:
+            model_obj = load_competitor_model()
+        except Exception:
+            model_obj = None
 
-    for i, p in enumerate(grid):
-        # Follower responds via ML predictor
-        follower_new_p, prob_inc = get_competitor_price(
-            leader_price=p,
-            current_follower_price=p_foll,
-            context=ctx,
-            mode="simulated_ml",
-            params=ml_params,
-        )
-
-        q = linear_demand(
-            leader_price=p,
-            follower_price=follower_new_p,
-            a=a,
-            b=b,
-            c=c,
-            context_shift=context_shift,
-        )
-        profit = calculate_profit(p, c_unit, q)
-        margin = calculate_margin(p, c_unit)
-
-        if profit > best_profit:
-            best_profit = profit
-            best_idx = i
-
-        records.append({
-            "price": round(float(p), 4),
-            "follower_price": round(float(follower_new_p), 4),
-            "prob_increase": round(float(prob_inc), 4),
-            "demand": round(float(q), 4),
-            "profit": round(float(profit), 4),
-            "margin": round(float(margin), 4),
-            "revenue": round(float(p * q), 4),
+    if target_accuracy is None and model_obj is not None and hasattr(model_obj, "predict_response"):
+        # Fast vectorized path
+        leader_prev = float(ctx.get("leader_prev_price", p_foll))
+        leader_pct = (grid - leader_prev) / max(0.01, leader_prev)
+        df_grid = pd.DataFrame({
+            "leader_price": grid,
+            "leader_prev_price": leader_prev,
+            "leader_price_change_pct": leader_pct,
+            "follower_price": p_foll,
+            "price_gap": grid - p_foll,
+            "price_ratio": grid / max(0.01, p_foll),
+            "recent_demand": float(ctx.get("recent_demand", 10.0)),
+            "sales_volatility": float(ctx.get("sales_volatility", 2.0)),
+            "demand_trend": float(ctx.get("demand_trend", 0.0)),
+            "day_of_week": int(ctx.get("day_of_week", 2)),
+            "month": int(ctx.get("month", 5)),
+            "is_weekend": int(ctx.get("is_weekend", 0)),
+            "snap_CA": int(ctx.get("snap_CA", 0)),
+            "has_event": int(ctx.get("has_event", 0)),
         })
+        follower_prices, prob_increases = model_obj.predict_response(df_grid)
+        demands = np.maximum(0.0, a - b * grid + c * follower_prices + context_shift)
+        profits = (grid - c_unit) * demands
+        margins = (grid - c_unit) / np.maximum(0.01, grid)
+        revenues = grid * demands
 
-    grid_df = pd.DataFrame(records)
+        best_idx = int(np.argmax(profits))
+        grid_df = pd.DataFrame({
+            "price": np.round(grid, 4),
+            "follower_price": np.round(follower_prices, 4),
+            "prob_increase": np.round(prob_increases, 4),
+            "demand": np.round(demands, 4),
+            "profit": np.round(profits, 4),
+            "margin": np.round(margins, 4),
+            "revenue": np.round(revenues, 4),
+        })
+    else:
+        # Standard loop path (e.g. for noisy wrapper or non-standard models)
+        records = []
+        best_profit = -np.inf
+        best_idx = 0
+
+        for i, p in enumerate(grid):
+            # Follower responds via ML predictor
+            follower_new_p, prob_inc = get_competitor_price(
+                leader_price=p,
+                current_follower_price=p_foll,
+                context=ctx,
+                mode="simulated_ml",
+                params=ml_params,
+            )
+
+            q = linear_demand(
+                leader_price=p,
+                follower_price=follower_new_p,
+                a=a,
+                b=b,
+                c=c,
+                context_shift=context_shift,
+            )
+            profit = calculate_profit(p, c_unit, q)
+            margin = calculate_margin(p, c_unit)
+
+            if profit > best_profit:
+                best_profit = profit
+                best_idx = i
+
+            records.append({
+                "price": round(float(p), 4),
+                "follower_price": round(float(follower_new_p), 4),
+                "prob_increase": round(float(prob_inc), 4),
+                "demand": round(float(q), 4),
+                "profit": round(float(profit), 4),
+                "margin": round(float(margin), 4),
+                "revenue": round(float(p * q), 4),
+            })
+
+        grid_df = pd.DataFrame(records)
 
     # 3. Extract optimal recommendation
     best_row = grid_df.iloc[best_idx]
