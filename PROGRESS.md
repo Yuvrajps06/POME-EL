@@ -9,7 +9,7 @@
 - [x] Phase 5: Stackelberg Game Optimization Engine
 - [x] Phase 6: Strategy Comparison & Evaluation Framework
 - [x] Phase 7: Sensitivity Analysis & Simulation Experiments
-- [ ] Phase 8: Streamlit Dashboard Implementation
+- [x] Phase 8: Streamlit Dashboard Implementation
 - [ ] Phase 9: Documentation, Packaging & Final Verification
 
 ## Decisions made
@@ -49,6 +49,11 @@
    - **Systematic Sweeps with Disk Caching**: Built automated parameter sweeps cached to `data/processed/experiments/` (`sensitivity_heatmap_strength_accuracy.csv`, `sensitivity_accuracy_curve.csv`, `sensitivity_competitor_behaviors.csv`, `sensitivity_demand_slopes.csv`, `sensitivity_robustness.csv`).
    - **Asymmetric Error Degradation**: Formulated both symmetric direction flips and asymmetric error regimes (optimistic vs pessimistic) in `NoisyCompetitorModelWrapper` to demonstrate that error nature, not accuracy alone, governs decision-level downside risk.
    - **Reaction Latency**: Implemented competitor response observation delays ($L \in \{0, 1, 3\}$ days) in `MarketEnvironment`.
+11. **Phase 8 Streamlit Dashboard Implementation**:
+   - **Multi-Page Architecture**: Implemented 7 modular pages in `dashboard/{overview,market,demand,competitor,optimizer,comparison,sensitivity}.py` with centralized navigation in `app.py`.
+   - **Zero Logic Duplication**: All charts and analytics directly reuse existing functions from `src/data/eda.py`, `src/demand/`, `src/optimization/`, `src/experiments/comparison.py`, and `src/experiments/sensitivity.py`.
+   - **Caching & High Performance**: Shared `@st.cache_data` and `@st.cache_resource` in `dashboard/utils.py` load precomputed simulation runs, elasticity estimates, and model weights in milliseconds.
+   - **Methodological Transparency**: Enforced persistent banners displaying the active competitor mode and clear caveats that M5 contains no external competitor pricing.
 
 ## Example Calls for Each Strategy
 
@@ -219,6 +224,18 @@ print(f"Strategy C: Rec Price=${result_c.recommended_price:.2f}, Predicted Follo
 ### `src.optimization.ml_optimizer`
 - `optimize_ml_stackelberg(baseline_price: float, current_follower_price: float, cost: float, a: float, b: float, c: float = 0.50, context: Optional[Dict[str, Any]] = None, context_shift: float = 0.0, competitor_model: Optional[CompetitorResponseModel] = None, target_accuracy: Optional[float] = None, min_factor: float = PRICE_GRID_MIN_FACTOR, max_factor: float = PRICE_GRID_MAX_FACTOR, num_steps: int = PRICE_GRID_NUM_STEPS, custom_grid: Optional[np.ndarray] = None) -> OptimizationResult`
 
+### `dashboard`
+- `dashboard.overview.render() -> None`
+- `dashboard.market.render() -> None`
+- `dashboard.demand.render() -> None`
+- `dashboard.competitor.render() -> None`
+- `dashboard.optimizer.render() -> None`
+- `dashboard.comparison.render() -> None`
+- `dashboard.sensitivity.render() -> None`
+- `dashboard.utils.load_processed_dataset() -> pd.DataFrame`
+- `dashboard.utils.get_cached_demand_model() -> Optional[Any]`
+- `dashboard.utils.get_cached_competitor_model() -> Optional[CompetitorResponseModel]`
+
 ## Known issues
 
-None. Phases 1–7 passing 47/47 unit tests cleanly. Ready for Phase 8 (Streamlit dashboard).
+None. Phases 1–8 passing 47/47 unit tests cleanly. Dashboard tested and verified. Ready for Phase 9.

@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Union
 import numpy as np
 import pandas as pd
+import plotly.graph_objects as go
 
 from src.game.demand_function import linear_demand
 from src.game.profit_function import calculate_margin, calculate_margin_pct, calculate_profit
@@ -177,3 +178,54 @@ def optimize_baseline(
         negative_margin=is_neg_margin,
         grid_evaluations=grid_df,
     )
+
+
+def plot_profit_vs_price(
+    results: Union[OptimizationResult, List[OptimizationResult]],
+) -> go.Figure:
+    """Plot profit curves across candidate price grid for one or multiple optimization results.
+
+    Args:
+        results: Single OptimizationResult or list of OptimizationResult objects.
+
+    Returns:
+        Plotly Figure.
+    """
+    if isinstance(results, OptimizationResult):
+        results = [results]
+
+    fig = go.Figure()
+
+    colors = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728"]
+
+    for i, r in enumerate(results):
+        df = r.grid_evaluations
+        c = colors[i % len(colors)]
+        fig.add_trace(
+            go.Scatter(
+                x=df["price"],
+                y=df["profit"],
+                mode="lines",
+                name=f"{r.strategy} Profit Curve",
+                line=dict(color=c, width=2.5),
+            )
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=[r.recommended_price],
+                y=[r.expected_profit],
+                mode="markers",
+                marker=dict(size=12, symbol="star", color=c),
+                name=f"{r.strategy} Optimum (${r.recommended_price:.2f})",
+            )
+        )
+
+    fig.update_layout(
+        title="Expected Profit vs Leader Candidate Price ($)",
+        xaxis_title="Leader Price ($)",
+        yaxis_title="Expected Profit ($)",
+        template="plotly_white",
+        hovermode="x unified",
+    )
+    return fig
+
