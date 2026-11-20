@@ -5,7 +5,7 @@ adjustments realize stochastically according to true parameters.
 Evaluates realized profit and revenue for any pricing strategy (Baseline, Game, ML-aware).
 """
 
-from typing import Any, Dict, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 
 from src.competitor.response_simulator import (
@@ -32,6 +32,7 @@ class MarketEnvironment:
         competitor_params: Optional[Dict[str, Any]] = None,
         demand_noise_std: float = 2.0,
         competitor_noise_std: float = 0.02,
+        competitor_delay: int = 0,
         random_seed: int = RANDOM_SEED,
     ):
         """Initialize market environment.
@@ -47,6 +48,7 @@ class MarketEnvironment:
             competitor_params: Optional overrides for competitor reaction policy.
             demand_noise_std: Standard deviation of unobserved demand shocks.
             competitor_noise_std: Standard deviation of competitor pricing execution noise.
+            competitor_delay: Response delay lag (in periods/days) before competitor reacts.
             random_seed: Master random seed for reproducibility.
         """
         self.initial_leader_price = float(initial_leader_price)
@@ -59,10 +61,12 @@ class MarketEnvironment:
         self.competitor_params = competitor_params or {}
         self.demand_noise_std = float(demand_noise_std)
         self.competitor_noise_std = float(competitor_noise_std)
+        self.competitor_delay = max(0, int(competitor_delay))
         self.random_seed = int(random_seed)
 
         self.rng = np.random.RandomState(self.random_seed)
         self.current_follower_price = self.initial_follower_price
+        self.leader_price_history: List[float] = [self.initial_leader_price]
         self.period = 0
 
     def reset(self, seed: Optional[int] = None) -> float:
@@ -78,6 +82,7 @@ class MarketEnvironment:
             self.random_seed = seed
         self.rng = np.random.RandomState(self.random_seed)
         self.current_follower_price = self.initial_follower_price
+        self.leader_price_history = [self.initial_leader_price]
         self.period = 0
         return self.current_follower_price
 
@@ -103,16 +108,25 @@ class MarketEnvironment:
         """
         self.period += 1
         p_lead = max(0.10, float(leader_price))
+        self.leader_price_history.append(p_lead)
         p_foll_prev = self.current_follower_price
 
-        # 1. True competitor reaction
+        # 1. True competitor reaction (accounting for observation delay)
         params = dict(self.competitor_params)
         params["behavior"] = self.competitor_behavior
         params["noise_std"] = 0.0  # Rule returns base reaction; apply noise via self.rng for exact reproducibility
 
+        if self.competitor_delay > 0 and self.period <= self.competitor_delay:
+            # Competitor has not yet observed leader change; responds to initial price
+            effective_leader_p = self.initial_leader_price
+        elif self.competitor_delay > 0:
+            effective_leader_p = self.leader_price_history[-1 - self.competitor_delay]
+        else:
+            effective_leader_p = p_lead
+
         # Draw competitor reaction and apply stochastic execution noise with self.rng
         raw_foll_p, prob_inc = rule_based_response(
-            leader_price=p_lead,
+            leader_price=effective_leader_p,
             current_follower_price=p_foll_prev,
             context=context,
             params=params,

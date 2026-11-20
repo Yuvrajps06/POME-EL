@@ -33,6 +33,7 @@ def optimize_ml_stackelberg(
     context_shift: float = 0.0,
     competitor_model: Optional[CompetitorResponseModel] = None,
     target_accuracy: Optional[float] = None,
+    error_mode: str = "symmetric",
     min_factor: float = PRICE_GRID_MIN_FACTOR,
     max_factor: float = PRICE_GRID_MAX_FACTOR,
     num_steps: int = PRICE_GRID_NUM_STEPS,
@@ -81,15 +82,22 @@ def optimize_ml_stackelberg(
 
     # 2. Evaluate grid anticipating ML-predicted follower response
     model_obj = competitor_model or ml_params.get("model")
-    if model_obj is None and target_accuracy is None:
+    if model_obj is None:
         from src.competitor.response_model import load_competitor_model
         try:
             model_obj = load_competitor_model()
         except Exception:
             model_obj = None
 
-    if target_accuracy is None and model_obj is not None and hasattr(model_obj, "predict_response"):
-        # Fast vectorized path
+    if target_accuracy is not None and model_obj is not None:
+        from src.competitor.response_model import NoisyCompetitorModelWrapper
+        err_mode = error_mode or ml_params.get("error_mode", "symmetric")
+        model_obj = NoisyCompetitorModelWrapper(
+            base_model=model_obj, target_accuracy=target_accuracy, error_mode=err_mode
+        )
+
+    if model_obj is not None and hasattr(model_obj, "predict_response"):
+        # Fast vectorized path for both clean and noisy ML
         leader_prev = float(ctx.get("leader_prev_price", p_foll))
         leader_pct = (grid - leader_prev) / max(0.01, leader_prev)
         df_grid = pd.DataFrame({

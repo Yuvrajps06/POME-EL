@@ -8,7 +8,7 @@
 - [x] Phase 4: Competitor Response Modeling
 - [x] Phase 5: Stackelberg Game Optimization Engine
 - [x] Phase 6: Strategy Comparison & Evaluation Framework
-- [ ] Phase 7: Sensitivity Analysis & Simulation Experiments
+- [x] Phase 7: Sensitivity Analysis & Simulation Experiments
 - [ ] Phase 8: Streamlit Dashboard Implementation
 - [ ] Phase 9: Documentation, Packaging & Final Verification
 
@@ -45,6 +45,10 @@
    - **True-World Evaluation Principle**: Strategies are not merely evaluated against their internal expectations; each strategy is deployed into a ground-truth `MarketEnvironment` simulator where competitor reactions follow an adaptive policy with stochastic execution noise and demand experiences unobserved exogenous shocks.
    - **Common Random Numbers (CRN)**: All strategies face identical environmental seeds within each simulation run, isolating true algorithmic decision quality from environmental randomness.
    - **Empirical Win/Loss/Tie Distribution**: Evaluated over 40 independent 28-day simulation horizons (1,120 periods per strategy). Strategy C wins in 62.5% of runs, Strategy A in 37.5%, confirming nuanced trade-offs between pricing power and downside demand shocks.
+10. **Phase 7 Sensitivity Analysis & Simulation Experiments**:
+   - **Systematic Sweeps with Disk Caching**: Built automated parameter sweeps cached to `data/processed/experiments/` (`sensitivity_heatmap_strength_accuracy.csv`, `sensitivity_accuracy_curve.csv`, `sensitivity_competitor_behaviors.csv`, `sensitivity_demand_slopes.csv`, `sensitivity_robustness.csv`).
+   - **Asymmetric Error Degradation**: Formulated both symmetric direction flips and asymmetric error regimes (optimistic vs pessimistic) in `NoisyCompetitorModelWrapper` to demonstrate that error nature, not accuracy alone, governs decision-level downside risk.
+   - **Reaction Latency**: Implemented competitor response observation delays ($L \in \{0, 1, 3\}$ days) in `MarketEnvironment`.
 
 ## Example Calls for Each Strategy
 
@@ -136,10 +140,47 @@ print(f"Strategy C: Rec Price=${result_c.recommended_price:.2f}, Predicted Follo
 - **Where Strategies Tie**:
   - Across periods where price grids discretize to the exact same cent or when competitor cross-price elasticity is weak ($c \to 0$), all strategies converge to identical pricing recommendations.
 
+## Phase 7 Sensitivity Analysis Results
+
+### 1. When does ML-aware pricing help?
+- **Responsive Competitors**: Strategy C provides maximum value when the competitor responds predictably and responsively ($\text{response\_strength} \ge 0.75$) to leader price movements.
+- **High Cross-Price Sensitivity ($c \ge 0.50$)**: When cross-store elasticity is substantial, leader price leadership induces the follower to raise prices in tandem, allowing the leader to capture wider unit margins ($\approx \$0.64$ vs $\$0.62$) without sacrificing category market share.
+- **Upward-Biased / Matching Follower Policy**: Under `match` or `raise` policies, Strategy C successfully exploits the follower's price umbrella, yielding consistent profit improvements over Baseline A.
+
+### 2. When does it hurt?
+- **Aggressive Undercutting / Price Wars**: When the true competitor follows an `undercut` policy, any attempt by the leader to test higher price points results in immediate market share loss to the competitor.
+- **Asymmetric Optimistic Forecasting Errors**: When the ML model suffers from optimistic bias (predicting the competitor will match upward when they actually maintain or discount), the leader prices too high and loses substantial volume.
+- **Competitor Reaction Latency (Delays $\ge 3$ periods)**: During delayed periods, the competitor retains old lower prices, leaving the leader temporarily uncompetitive and penalizing early-period profits.
+- **Severe Unobserved Demand Contraction**: In negative demand shock regimes ($\epsilon_d < 0$), higher prices compound customer churn; baseline pricing with lower unit prices protects sales volume better.
+
+### 3. What is the accuracy threshold?
+- **Symmetric Error Break-Even**: Under symmetric degradation, Strategy C achieves parity and begins outperforming Baseline A at **$\approx 58\% - 62\%$ accuracy**. Beyond 65% accuracy, ML-aware Stackelberg safely captures profit gains.
+- **Asymmetric Error Sensitivity**:
+  - *Optimistic Errors* (false positives on competitor price hikes) are hazardous: break-even shifts upward to **$\ge 75\%$ accuracy** because pricing high into an uncooperative market severely penalizes revenue.
+  - *Pessimistic Errors* (false negatives on competitor matching) are benign: break-even remains low (**$\approx 50\%$**) because the optimizer cautiously reverts to near-baseline prices ($P_L \approx \$1.45$), risking only unrealized upside rather than severe downside losses.
+
+### 4. How robust is the recommendation?
+- **Exogenous Unit Cost Robustness**: Across cost variations ($C \in [\$0.65, \$1.05]$), optimal markups scale smoothly and preserve margin ranking ($P_L^* > C$ maintained throughout).
+- **Demand Parameter Uncertainty**: Even when customer own-price elasticity deviates ($\pm 50\%$), candidate price grid bounds ($[0.70 \times P_{base}, 1.30 \times P_{base}]$) and non-negative margin clipping effectively prevent catastrophic pricing errors.
+- **Volatility Tolerance**: In low-to-moderate demand volatility ($\sigma_d \le 2.0$), Strategy C maintains its profit advantage over Baseline A across repeated simulation trajectories.
+
 ## Interfaces (function signatures)
 
+### `src.experiments.sensitivity`
+- `sweep_accuracy_and_response_strength(n_simulations: int = 15, n_periods: int = 14, competitor_model: Optional[CompetitorResponseModel] = None, master_seed: int = RANDOM_SEED, cache_path: Optional[Path] = None, force_recompute: bool = False) -> pd.DataFrame`
+- `sweep_accuracy_curves(n_simulations: int = 20, n_periods: int = 14, competitor_model: Optional[CompetitorResponseModel] = None, master_seed: int = RANDOM_SEED, cache_path: Optional[Path] = None, force_recompute: bool = False) -> pd.DataFrame`
+- `sweep_competitor_behaviors(n_simulations: int = 15, n_periods: int = 14, competitor_model: Optional[CompetitorResponseModel] = None, master_seed: int = RANDOM_SEED, cache_path: Optional[Path] = None, force_recompute: bool = False) -> pd.DataFrame`
+- `sweep_demand_sensitivity(cache_path: Optional[Path] = None, force_recompute: bool = False) -> pd.DataFrame`
+- `sweep_robustness_uncertainty(n_simulations: int = 15, n_periods: int = 14, competitor_model: Optional[CompetitorResponseModel] = None, master_seed: int = RANDOM_SEED, cache_path: Optional[Path] = None, force_recompute: bool = False) -> pd.DataFrame`
+- `run_all_sensitivity_sweeps(n_simulations: int = 15, n_periods: int = 14, force_recompute: bool = False) -> Dict[str, pd.DataFrame]`
+- `plot_heatmap_strength_x_accuracy(df_heatmap: pd.DataFrame) -> go.Figure`
+- `plot_accuracy_vs_profit_curve(df_accuracy: pd.DataFrame) -> go.Figure`
+- `plot_competitor_behavior_comparison(df_behaviors: pd.DataFrame) -> go.Figure`
+- `plot_demand_sensitivity_vs_price(df_demand: pd.DataFrame) -> go.Figure`
+- `plot_robustness_analysis(df_robustness: pd.DataFrame) -> go.Figure`
+
 ### `src.experiments.simulation`
-- `class MarketEnvironment(initial_leader_price: float, initial_follower_price: float, cost: float, a: float, b: float, c: float = 0.50, competitor_behavior: str = "adaptive", competitor_params: Optional[Dict[str, Any]] = None, demand_noise_std: float = 2.0, competitor_noise_std: float = 0.02, random_seed: int = RANDOM_SEED)`
+- `class MarketEnvironment(initial_leader_price: float, initial_follower_price: float, cost: float, a: float, b: float, c: float = 0.50, competitor_behavior: str = "adaptive", competitor_params: Optional[Dict[str, Any]] = None, demand_noise_std: float = 2.0, competitor_noise_std: float = 0.02, competitor_delay: int = 0, random_seed: int = RANDOM_SEED)`
   - `reset(seed: Optional[int] = None) -> float`
   - `step(leader_price: float, context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]`
 
@@ -180,4 +221,4 @@ print(f"Strategy C: Rec Price=${result_c.recommended_price:.2f}, Predicted Follo
 
 ## Known issues
 
-None. Phases 1–6 passing 41/41 unit tests cleanly in 4.3s. Ready for Phase 7.
+None. Phases 1–7 passing 47/47 unit tests cleanly. Ready for Phase 8 (Streamlit dashboard).

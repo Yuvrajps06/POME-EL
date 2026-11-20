@@ -145,6 +145,7 @@ class NoisyCompetitorModelWrapper:
         self,
         base_model: CompetitorResponseModel,
         target_accuracy: float = 0.70,
+        error_mode: str = "symmetric",
         random_seed: int = RANDOM_SEED,
     ):
         """Initialize noisy wrapper.
@@ -152,11 +153,61 @@ class NoisyCompetitorModelWrapper:
         Args:
             base_model: Trained CompetitorResponseModel.
             target_accuracy: Controlled target accuracy in range [0.50, 0.99].
+            error_mode: Error asymmetry mode:
+                - 'symmetric': Uniform direction flip on error.
+                - 'optimistic': Biased towards predicting competitor matches/raises upwards.
+                - 'pessimistic': Biased towards predicting competitor maintains/undercuts downwards.
             random_seed: Seed for stochastic degradation.
         """
         self.base_model = base_model
         self.target_accuracy = float(np.clip(target_accuracy, 0.50, 0.99))
+        self.error_mode = str(error_mode).lower()
         self.rng = np.random.RandomState(random_seed)
+
+    def predict_response(
+        self,
+        df_features: pd.DataFrame,
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """Batch predict competitor responses with controlled degradation.
+
+        Args:
+            df_features: Feature DataFrame containing 'follower_price', etc.
+
+        Returns:
+            Tuple of (predicted_prices_array, predicted_probabilities_array).
+        """
+        base_prices, base_probs = self.base_model.predict_response(df_features)
+        follower_prev = df_features["follower_price"].to_numpy(dtype=float)
+        n = len(df_features)
+
+        draws = self.rng.uniform(0.0, 1.0, size=n)
+        error_mask = draws > self.target_accuracy
+
+        noisy_prices = base_prices.copy()
+        noisy_probs = base_probs.copy()
+
+        if np.any(error_mask):
+            if self.error_mode == "optimistic":
+                # Optimistic error: model predicts competitor raises/matches even if ground truth is undercut/maintain
+                noisy_prices[error_mask] = np.maximum(
+                    base_prices[error_mask],
+                    follower_prev[error_mask] * 1.05,
+                )
+                noisy_probs[error_mask] = np.clip(base_probs[error_mask] + 0.35, 0.01, 0.99)
+            elif self.error_mode == "pessimistic":
+                # Pessimistic error: model predicts competitor undercuts even if competitor raises
+                noisy_prices[error_mask] = np.minimum(
+                    base_prices[error_mask],
+                    follower_prev[error_mask] * 0.95,
+                )
+                noisy_probs[error_mask] = np.clip(base_probs[error_mask] - 0.35, 0.01, 0.99)
+            else:
+                # Symmetric: flip deviation direction
+                delta = base_prices[error_mask] - follower_prev[error_mask]
+                noisy_prices[error_mask] = np.maximum(0.10, follower_prev[error_mask] - delta)
+                noisy_probs[error_mask] = 1.0 - base_probs[error_mask]
+
+        return np.round(noisy_prices, 2), np.round(noisy_probs, 4)
 
     def predict_single(
         self,
@@ -171,10 +222,16 @@ class NoisyCompetitorModelWrapper:
 
         # Inject classification flip with error rate (1 - target_accuracy)
         if self.rng.uniform(0.0, 1.0) > self.target_accuracy:
-            # Corrupt probability and flip price adjustment direction
-            noisy_prob = 1.0 - pred_prob
-            delta = pred_price - current_follower_price
-            noisy_price = current_follower_price - delta
+            if self.error_mode == "optimistic":
+                noisy_price = max(pred_price, current_follower_price * 1.05)
+                noisy_prob = min(0.99, pred_prob + 0.35)
+            elif self.error_mode == "pessimistic":
+                noisy_price = min(pred_price, current_follower_price * 0.95)
+                noisy_prob = max(0.01, pred_prob - 0.35)
+            else:
+                noisy_prob = 1.0 - pred_prob
+                delta = pred_price - current_follower_price
+                noisy_price = current_follower_price - delta
             return round(float(max(0.10, noisy_price)), 2), round(float(noisy_prob), 4)
 
         return pred_price, pred_prob

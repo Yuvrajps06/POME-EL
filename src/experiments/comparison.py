@@ -31,6 +31,7 @@ def run_strategy_trajectory(
     rule_params: Optional[Dict[str, Any]] = None,
     competitor_model: Optional[CompetitorResponseModel] = None,
     target_accuracy: Optional[float] = None,
+    error_mode: str = "symmetric",
     seed: int = RANDOM_SEED,
 ) -> pd.DataFrame:
     """Run a single multi-period simulation trajectory for one pricing strategy.
@@ -91,6 +92,7 @@ def run_strategy_trajectory(
                 c=c,
                 competitor_model=competitor_model,
                 target_accuracy=target_accuracy,
+                error_mode=error_mode,
             )
         else:
             raise ValueError(f"Unknown strategy code '{strategy}'. Must be 'A', 'B', or 'C'.")
