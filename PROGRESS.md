@@ -5,7 +5,7 @@
 - [x] Phase 1: Data Pipeline & Preprocessing
 - [x] Phase 2: Exploratory Data Analysis & Market Intelligence
 - [x] Phase 3: Demand Modeling & Elasticity Estimation
-- [ ] Phase 4: Competitor Response Modeling
+- [x] Phase 4: Competitor Response Modeling
 - [ ] Phase 5: Stackelberg Game Optimization Engine
 - [ ] Phase 6: Strategy Comparison & Evaluation Framework
 - [ ] Phase 7: Sensitivity Analysis & Simulation Experiments
@@ -29,12 +29,53 @@
 5. **Phase 2 EDA Findings**:
    - `FOODS_3_090`, `FOODS_3_723`, and `FOODS_3_491` exhibit 8 distinct price levels with moderate price volatility ($CV \approx 0.08 - 0.10$).
    - Downward-sloping empirical demand identified for multiple products (`FOODS_3_124`, `FOODS_3_202`, `FOODS_3_704`, `FOODS_3_156`, `FOODS_3_351`, `FOODS_3_755`).
-6. **Phase 3 Modeling Decisions**:
-   - **Champion Forecaster**: `Hist Gradient Boosting Regressor` achieved the lowest test MAE (3.482), lowest test RMSE (5.915), lowest test WMAPE (36.82%), and highest test $R^2$ (0.8081), beating the seasonal naive benchmark by 21.6% MAE reduction. Serialized to `models/demand_model.pkl`.
-   - **Extrapolation Protection**: `DemandModel.price_response_curve` issues explicit user warnings when pricing decisions probe outside historical observed bounds [$0.94, $5.98].
-   - **Linear Demand Specification**: Extracted structural parameters $Q = a - b \cdot P + c \cdot P_F + d \cdot X$ for the game theory engine. For items with positive unconstrained OLS slopes, regularized $b > 0$ based on unit elasticity was structurally imposed to ensure valid downward-sloping Stackelberg reaction functions. Cross-price elasticity $c$ initialized to $0.50$ (to be calibrated in Phase 4).
+6. **Phase 3 Demand Modeling**:
+   - **Champion Forecaster**: `Hist Gradient Boosting Regressor` (Test MAE: 3.482, RMSE: 5.915, WMAPE: 36.82%, $R^2$: 0.8081). Serialized to `models/demand_model.pkl`.
+   - **Linear Demand Specification**: Extracted structural parameters $Q = a - b \cdot P + c \cdot P_F + d \cdot X$.
+7. **Phase 4 Competitor Response Module**:
+   - **Ground Truth Honesty**: M5 retail data contains NO external competitor prices. Modeled honestly in three labeled modes behind one unified common interface.
+   - **Common Interface**: `get_competitor_price(leader_price, current_follower_price, context, mode, params) -> (follower_price, probability_of_increase)`
+   - **Modes Implemented**:
+     1. `"rule"`: Configurable rule-based response (behaviors: `match`, `undercut`, `maintain`, `raise`, `adaptive`; parameters: `match_probability`, `response_strength`, `undercut_margin`, `noise_std`).
+     2. `"simulated_ml"`: Trained on 5,000 synthetic interaction scenarios generated from known behavioral rules with noise. Champion classifier (`RandomForestClassifier`, 96.1% test accuracy) predicts price increase probability; regressor (`HistGradientBoostingRegressor`) predicts reaction magnitude. Serialized to `models/competitor_model.pkl`. All outputs labeled: *"SIMULATED DATA (not real-world accuracy)"*.
+     3. `"real"`: Stub loader enforcing documented schema `['Date', 'Our_Price', 'Competitor_Price', 'Our_Sales', 'Competitor_Sales']`. Raises clear `FileNotFoundError` if unsupplied.
+   - **Noisy ML Wrapper**: `NoisyCompetitorModelWrapper` introduces controlled error injection to degrade prediction accuracy down to any target level (50% to 90%) for Phase 7 sensitivity benchmarks.
 
-## Model Comparison (Chronological Validation & Test)
+## Common Competitor Interface
+
+```python
+get_competitor_price(
+    leader_price: float,
+    current_follower_price: float,
+    context: Optional[Dict[str, Any]] = None,
+    mode: str = "rule",
+    params: Optional[Dict[str, Any]] = None
+) -> Tuple[float, float]
+# Returns: (follower_price: float, probability_of_increase: float)
+```
+
+## Competitor Response Evaluation (Simulated Data)
+
+> [!WARNING]
+> **Data Provenance Notice**: M5 retail data contains NO external competitor prices. All competitor reaction models in mode 'simulated_ml' and 'rule' are derived from calibrated behavioral simulations with known response rules. Never claim competitor behavior was learned from M5 retail data directly.
+
+| Metric | Random Forest (Champion) | Logistic Regression | Hist Gradient Boosting |
+| :--- | :---: | :---: | :---: |
+| **Validation Accuracy** | **96.40%** | 94.80% | 96.13% |
+| **Test Accuracy** | **96.13%** | 94.67% | 95.87% |
+| **Test Precision** | **95.73%** | 94.20% | 95.42% |
+| **Test Recall** | **96.00%** | 94.57% | 95.71% |
+| **Test F1 Score** | **95.86%** | 94.38% | 95.56% |
+| **Test ROC AUC** | **0.9945** | 0.9882 | 0.9931 |
+| **Brier Score** | **0.0299** | 0.0410 | 0.0315 |
+
+**Behavioral Rule Recovery Metrics**:
+- Directional Rule Recovery Rate: **96.13%**
+- Probability Recovery MAE: **0.2083**
+- Price Magnitude Response MAE: **$0.0504**
+- Price Magnitude Response RMSE: **$0.0745**
+
+## Model Comparison (Demand Forecaster - Phase 3)
 
 | Model | Val MAE | Val RMSE | Val WMAPE | Val R² | Test MAE | Test RMSE | Test WMAPE | Test R² |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
@@ -44,65 +85,31 @@
 | **Random Forest** | 3.570 | 6.314 | 40.48% | 0.7883 | 3.823 | 6.281 | 40.42% | 0.7836 |
 | **Seasonal Naive** (Lag-7 Baseline) | 3.908 | 7.803 | 44.32% | 0.6767 | 4.443 | 7.743 | 46.97% | 0.6712 |
 
-## Observational Elasticity & Caveats
-
-> [!CAUTION]
-> **Methodological Caveat**: Price elasticity estimated from historical regression is observational, NOT causal. It captures historical co-movements between price and sales volume conditional on observed calendar, holiday, and SNAP controls. It does not represent a randomized counterfactual experiment and may remain confounded by unobserved demand shocks, promotional displays, or store traffic.
-
-### Top Elasticity Estimates (Statsmodels OLS with Controls)
-
-| Item ID | Store | Elasticity ($\hat{\beta}_1$) | Std Error | 95% Confidence Interval | p-value | R² |
-| :--- | :--- | :---: | :---: | :---: | :---: | :---: |
-| `FOODS_3_124` | `CA_1` | **-5.223** | 0.440 | [-6.087, -4.360] | < 0.0001 | 0.1718 |
-| `FOODS_3_124` | `CA_2` | **-4.950** | 0.409 | [-5.752, -4.148] | < 0.0001 | 0.1956 |
-| `FOODS_3_351` | `CA_1` | **-4.949** | 0.308 | [-5.552, -4.345] | < 0.0001 | 0.2416 |
-| `FOODS_3_755` | `CA_1` | **-4.758** | 0.332 | [-5.409, -4.107] | < 0.0001 | 0.2178 |
-| `FOODS_3_202` | `CA_1` | **-4.668** | 0.374 | [-5.402, -3.934] | < 0.0001 | 0.2058 |
-| `FOODS_3_704` | `CA_1` | **-4.614** | 0.275 | [-5.153, -4.074] | < 0.0001 | 0.2226 |
-| `FOODS_3_156` | `CA_1` | **-4.019** | 0.388 | [-4.780, -3.259] | < 0.0001 | 0.0928 |
-| `FOODS_3_704` | `CA_2` | **-3.797** | 0.264 | [-4.314, -3.280] | < 0.0001 | 0.1703 |
-| `FOODS_3_755` | `CA_2` | **-3.131** | 0.303 | [-3.725, -2.537] | < 0.0001 | 0.1153 |
-| `FOODS_3_351` | `CA_2` | **-2.874** | 0.294 | [-3.451, -2.297] | < 0.0001 | 0.1072 |
-| `FOODS_3_202` | `CA_2` | **-2.635** | 0.342 | [-3.306, -1.963] | < 0.0001 | 0.1574 |
-
-### Game Engine Linear Demand Parameters ($Q = a - b \cdot P + c \cdot P_F + d \cdot X$)
-
-| Item ID | Store | Intercept $a$ | Own-Price Slope $b$ | Cross-Price Slope $c$ | R² | Mean Price ($) | Mean Sales |
-| :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| `FOODS_3_090` | `CA_1` | 165.394 | 79.181 | 0.50 (cfg) | 0.1948 | $1.38 | 66.49 |
-| `FOODS_3_090` | `CA_2` | 58.724 | 21.402 | 0.50 (cfg) | 0.1572 | $1.37 | 29.36 |
-| `FOODS_3_124` | `CA_1` | 32.340 | 5.080 | 0.50 (cfg) | 0.2419 | $5.38 | 5.62 |
-| `FOODS_3_124` | `CA_2` | 21.532 | 3.562 | 0.50 (cfg) | 0.2087 | $5.38 | 3.21 |
-| `FOODS_3_202` | `CA_1` | 62.783 | 10.717 | 0.50 (cfg) | 0.2450 | $4.32 | 16.40 |
-| `FOODS_3_202` | `CA_2` | 12.213 | 1.512 | 0.50 (cfg) | 0.1574 | $4.31 | 8.54 |
-| `FOODS_3_704` | `CA_1` | 27.766 | 5.241 | 0.50 (cfg) | 0.2280 | $4.31 | 4.61 |
-| `FOODS_3_704` | `CA_2` | 16.433 | 3.204 | 0.50 (cfg) | 0.1727 | $4.31 | 2.94 |
-| `FOODS_3_156` | `CA_1` | 31.141 | 6.891 | 0.50 (cfg) | 0.0939 | $3.85 | 5.81 |
-
 ## Interfaces (function signatures)
 
-### `src.demand.demand_model`
-- `class DemandModel(model: Any, feature_names: List[str], min_observed_price: float, max_observed_price: float, model_name: str)`
-  - `predict(X: Union[pd.DataFrame, np.ndarray]) -> np.ndarray`
-  - `predict_demand(price: float, context_features: Union[Dict[str, Any], pd.Series, pd.DataFrame]) -> float`
-  - `price_response_curve(context_features: Union[Dict[str, Any], pd.Series], price_grid: Optional[np.ndarray] = None, min_price: Optional[float] = None, max_price: Optional[float] = None, n_points: int = 30) -> pd.DataFrame`
-- `fit_linear_approximation(df: pd.DataFrame, item_id: str, store_id: str, default_c: float = 0.50) -> Dict[str, Any]`
-- `save_demand_model(wrapper: DemandModel, path: Optional[Union[str, Path]] = None) -> Path`
-- `load_demand_model(path: Optional[Union[str, Path]] = None) -> DemandModel`
+### `src.competitor.response_simulator`
+- `rule_based_response(leader_price: float, current_follower_price: float, context: Optional[Dict[str, Any]] = None, params: Optional[Dict[str, Any]] = None) -> Tuple[float, float]`
+- `generate_synthetic_competitor_dataset(processed_df: pd.DataFrame, n_samples: int = 4000, behavior: str = "adaptive", noise_std: float = 0.02, random_seed: int = RANDOM_SEED) -> pd.DataFrame`
 
-### `src.demand.elasticity`
-- `estimate_log_log_elasticity(df: pd.DataFrame, item_id: Optional[str] = None, store_id: Optional[str] = None, controls: Optional[List[str]] = None) -> Dict[str, Any]`
-- `compute_per_item_elasticities(df: pd.DataFrame, items: Optional[List[str]] = None, stores: Optional[List[str]] = None) -> pd.DataFrame`
-- `plot_elasticity_comparison(elasticity_df: pd.DataFrame) -> go.Figure`
+### `src.competitor.response_model`
+- `get_competitor_price(leader_price: float, current_follower_price: float, context: Optional[Dict[str, Any]] = None, mode: str = "rule", params: Optional[Dict[str, Any]] = None) -> Tuple[float, float]`
+- `class CompetitorResponseModel(classifier: Any, regressor: Any, feature_names: List[str], classifier_name: str, regressor_name: str)`
+  - `predict_response(features_df: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray]`
+  - `predict_single(leader_price: float, current_follower_price: float, context: Optional[Dict[str, Any]] = None) -> Tuple[float, float]`
+- `class NoisyCompetitorModelWrapper(base_model: CompetitorResponseModel, target_accuracy: float = 0.70, random_seed: int = RANDOM_SEED)`
+  - `predict_single(leader_price: float, current_follower_price: float, context: Optional[Dict[str, Any]] = None) -> Tuple[float, float]`
+- `load_real_competitor_data(filepath: Optional[Union[str, Path]] = None) -> pd.DataFrame`
+- `train_competitor_models(train_df: pd.DataFrame, val_df: pd.DataFrame, feature_cols: Optional[List[str]] = None, save_path: Optional[Union[str, Path]] = None) -> Tuple[CompetitorResponseModel, Dict[str, Any]]`
+- `save_competitor_model(wrapper: CompetitorResponseModel, path: Optional[Union[str, Path]] = None) -> Path`
+- `load_competitor_model(path: Optional[Union[str, Path]] = None) -> CompetitorResponseModel`
 
-### `src.demand.forecasting`
-- `class SeasonalNaiveForecaster(lag_col: str = "lag_sales_7")`
-  - `fit(X: pd.DataFrame, y: Optional[pd.Series] = None) -> SeasonalNaiveForecaster`
-  - `predict(X: pd.DataFrame) -> np.ndarray`
-- `safe_wmape(y_true: Union[pd.Series, np.ndarray], y_pred: Union[pd.Series, np.ndarray]) -> float`
-- `train_and_evaluate_models(train_df: pd.DataFrame, val_df: pd.DataFrame, test_df: pd.DataFrame, feature_cols: Optional[List[str]] = None, target_col: str = "sales", save_best: bool = True) -> Tuple[Dict[str, Any], pd.DataFrame, str]`
-- `plot_actual_vs_predicted(actual: Union[pd.Series, np.ndarray], predicted: Union[pd.Series, np.ndarray], dates: Union[pd.Series, np.ndarray], title: str = "Actual vs Predicted Demand") -> go.Figure`
+### `src.competitor.response_evaluation`
+- `evaluate_response_classifier(y_true: Union[pd.Series, np.ndarray], y_prob: Union[pd.Series, np.ndarray], threshold: float = 0.50) -> Dict[str, Any]`
+- `evaluate_rule_recovery(test_df: pd.DataFrame, predicted_probs: np.ndarray, predicted_prices: np.ndarray) -> Dict[str, Any]`
+- `plot_confusion_matrix(cm: List[List[int]], labels: Tuple[str, str] = ("Maintain/Cut", "Increase")) -> go.Figure`
+- `plot_calibration_curve(y_true: Union[pd.Series, np.ndarray], y_prob: Union[pd.Series, np.ndarray], n_bins: int = 10) -> go.Figure`
+- `plot_rule_recovery(leader_pct_changes: np.ndarray, true_probs: np.ndarray, predicted_probs: np.ndarray) -> go.Figure`
 
 ## Known issues
 
-None. Phases 1, 2, and 3 passing 20/20 unit tests cleanly. Ready for Phase 4.
+None. Phases 1–4 passing 28/28 unit tests cleanly. Ready for Phase 5.
