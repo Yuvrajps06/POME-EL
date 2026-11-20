@@ -4,7 +4,7 @@
 
 - [x] Phase 1: Data Pipeline & Preprocessing
 - [x] Phase 2: Exploratory Data Analysis & Market Intelligence
-- [ ] Phase 3: Demand Modeling & Elasticity Estimation
+- [x] Phase 3: Demand Modeling & Elasticity Estimation
 - [ ] Phase 4: Competitor Response Modeling
 - [ ] Phase 5: Stackelberg Game Optimization Engine
 - [ ] Phase 6: Strategy Comparison & Evaluation Framework
@@ -18,67 +18,91 @@
    - **Category**: `FOODS`, Department `FOODS_3`.
    - **Stores**: `CA_1` (Leader store) and `CA_2` (Follower/Competitor store), controlling for California SNAP schedule (`snap_CA`).
    - **Selected Items (15 items)**: `FOODS_3_090`, `FOODS_3_473`, `FOODS_3_723`, `FOODS_3_491`, `FOODS_3_734`, `FOODS_3_156`, `FOODS_3_202`, `FOODS_3_785`, `FOODS_3_324`, `FOODS_3_124`, `FOODS_3_227`, `FOODS_3_755`, `FOODS_3_351`, `FOODS_3_534`, `FOODS_3_704`.
-   - **Primary Demonstration Item**: `FOODS_3_090` (highest volume hero item, 8 distinct price points from $1.00 to $1.60, CV = 0.0915, ~66.5 units/day in CA_1, ~29.4 in CA_2, low zero-rate).
+   - **Primary Demonstration Item**: `FOODS_3_090` (high volume hero item, 8 distinct price levels from $1.00 to $1.60, CV = 0.0915, ~66.5 units/day in CA_1, ~29.4 in CA_2, low zero-rate).
 2. **Missing Price Treatment**:
    - Rows where `sell_price` is missing correspond to weeks when an item was not yet on shelves or stocked. These rows are dropped rather than imputed.
 3. **Leakage Prevention**:
    - Lag features (`lag_sales_1`, `7`, `14`, `28`) use grouped `.shift(k)`.
    - Rolling features (`rolling_mean_7`, `28`, `rolling_std_7`, `28`) apply `.shift(1)` before computing rolling statistics to ensure target day sales is strictly excluded.
 4. **Chronological Splitting**:
-   - Strict temporal ordering: Test set (last 28 days: 2016-04-25 to 2016-05-22), Validation set (28 days prior: 2016-03-28 to 2016-04-24), Train set (preceding history).
+   - Strict temporal ordering: Test set (last 28 days: 2016-03-28 to 2016-04-24, 840 rows), Validation set (28 days prior: 2016-02-29 to 2016-03-27, 840 rows), Train set (preceding history: 2011-01-29 to 2016-02-28, 55,710 rows).
 5. **Phase 2 EDA Findings**:
-   - **Price Variation**: Items like `FOODS_3_090`, `FOODS_3_723`, and `FOODS_3_491` exhibit 8 distinct price levels with moderate price volatility ($CV \approx 0.08 - 0.10$), making them well-identified for empirical demand curve estimation.
-   - **Recommended Modeling Candidates**:
-     - *Hero Candidate*: `FOODS_3_090` (clear downward sloping log-log demand curve, heavy promo activity at $1.00 and regular pricing at $1.25-$1.60).
-     - *Alternative Candidates*: `FOODS_3_202` (mid-tier price $4.32, 16.4 units/day, 11% zero share) and `FOODS_3_723` ($1.38 avg price, 14.9 units/day).
-   - **Data Concerns**:
-     - *Intermittent demand*: For lower volume items, zero sales occur on 25-35% of days, reinforcing the requirement for log1p transformation (`np.log1p(sales)`) or count-based demand formulations.
-     - *Confounding*: Price drops frequently coincide with SNAP issuance windows (days 1-10 of month) and weekend peaks. Demand models must control for SNAP, day-of-week, and event indicators to avoid omitted variable bias in observational elasticity.
+   - `FOODS_3_090`, `FOODS_3_723`, and `FOODS_3_491` exhibit 8 distinct price levels with moderate price volatility ($CV \approx 0.08 - 0.10$).
+   - Downward-sloping empirical demand identified for multiple products (`FOODS_3_124`, `FOODS_3_202`, `FOODS_3_704`, `FOODS_3_156`, `FOODS_3_351`, `FOODS_3_755`).
+6. **Phase 3 Modeling Decisions**:
+   - **Champion Forecaster**: `Hist Gradient Boosting Regressor` achieved the lowest test MAE (3.482), lowest test RMSE (5.915), lowest test WMAPE (36.82%), and highest test $R^2$ (0.8081), beating the seasonal naive benchmark by 21.6% MAE reduction. Serialized to `models/demand_model.pkl`.
+   - **Extrapolation Protection**: `DemandModel.price_response_curve` issues explicit user warnings when pricing decisions probe outside historical observed bounds [$0.94, $5.98].
+   - **Linear Demand Specification**: Extracted structural parameters $Q = a - b \cdot P + c \cdot P_F + d \cdot X$ for the game theory engine. For items with positive unconstrained OLS slopes, regularized $b > 0$ based on unit elasticity was structurally imposed to ensure valid downward-sloping Stackelberg reaction functions. Cross-price elasticity $c$ initialized to $0.50$ (to be calibrated in Phase 4).
 
-## Output Files & Schema
+## Model Comparison (Chronological Validation & Test)
 
-- `data/processed/m5_processed.parquet` (57,390 rows, 37 columns)
-- `data/processed/m5_processed.csv` (57,390 rows, 37 columns)
-- `data/sample/m5_sample.csv` (100 rows, 37 columns)
-- `notebooks/market_kpis.csv` (Market intelligence KPIs for 30 series)
-- `notebooks/run_eda.py` & `notebooks/eda.ipynb` (Demonstration scripts)
+| Model | Val MAE | Val RMSE | Val WMAPE | Val R² | Test MAE | Test RMSE | Test WMAPE | Test R² |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **Hist Gradient Boosting** (Champion) | **3.111** | **5.920** | **35.28%** | **0.8139** | **3.482** | **5.915** | **36.82%** | **0.8081** |
+| **Ridge Regression** | 3.306 | 6.182 | 37.48% | 0.7971 | 3.618 | 6.136 | 38.25% | 0.7935 |
+| **Linear Regression** | 3.305 | 6.184 | 37.47% | 0.7969 | 3.623 | 6.140 | 38.30% | 0.7932 |
+| **Random Forest** | 3.570 | 6.314 | 40.48% | 0.7883 | 3.823 | 6.281 | 40.42% | 0.7836 |
+| **Seasonal Naive** (Lag-7 Baseline) | 3.908 | 7.803 | 44.32% | 0.6767 | 4.443 | 7.743 | 46.97% | 0.6712 |
 
-**Columns**:
-`item_id`, `dept_id`, `cat_id`, `store_id`, `state_id`, `d`, `sales`, `date`, `wm_yr_wk`, `weekday`, `wday`, `month`, `year`, `event_name_1`, `event_type_1`, `snap_CA`, `snap_TX`, `snap_WI`, `sell_price`, `is_outlier`, `price_change_pct`, `price_rel_mean`, `is_discounted`, `lag_sales_1`, `lag_sales_7`, `lag_sales_14`, `lag_sales_28`, `rolling_mean_7`, `rolling_std_7`, `rolling_mean_28`, `rolling_std_28`, `day_of_week`, `day_of_month`, `is_weekend`, `has_event`, `log_price`, `log_sales`.
+## Observational Elasticity & Caveats
+
+> [!CAUTION]
+> **Methodological Caveat**: Price elasticity estimated from historical regression is observational, NOT causal. It captures historical co-movements between price and sales volume conditional on observed calendar, holiday, and SNAP controls. It does not represent a randomized counterfactual experiment and may remain confounded by unobserved demand shocks, promotional displays, or store traffic.
+
+### Top Elasticity Estimates (Statsmodels OLS with Controls)
+
+| Item ID | Store | Elasticity ($\hat{\beta}_1$) | Std Error | 95% Confidence Interval | p-value | R² |
+| :--- | :--- | :---: | :---: | :---: | :---: | :---: |
+| `FOODS_3_124` | `CA_1` | **-5.223** | 0.440 | [-6.087, -4.360] | < 0.0001 | 0.1718 |
+| `FOODS_3_124` | `CA_2` | **-4.950** | 0.409 | [-5.752, -4.148] | < 0.0001 | 0.1956 |
+| `FOODS_3_351` | `CA_1` | **-4.949** | 0.308 | [-5.552, -4.345] | < 0.0001 | 0.2416 |
+| `FOODS_3_755` | `CA_1` | **-4.758** | 0.332 | [-5.409, -4.107] | < 0.0001 | 0.2178 |
+| `FOODS_3_202` | `CA_1` | **-4.668** | 0.374 | [-5.402, -3.934] | < 0.0001 | 0.2058 |
+| `FOODS_3_704` | `CA_1` | **-4.614** | 0.275 | [-5.153, -4.074] | < 0.0001 | 0.2226 |
+| `FOODS_3_156` | `CA_1` | **-4.019** | 0.388 | [-4.780, -3.259] | < 0.0001 | 0.0928 |
+| `FOODS_3_704` | `CA_2` | **-3.797** | 0.264 | [-4.314, -3.280] | < 0.0001 | 0.1703 |
+| `FOODS_3_755` | `CA_2` | **-3.131** | 0.303 | [-3.725, -2.537] | < 0.0001 | 0.1153 |
+| `FOODS_3_351` | `CA_2` | **-2.874** | 0.294 | [-3.451, -2.297] | < 0.0001 | 0.1072 |
+| `FOODS_3_202` | `CA_2` | **-2.635** | 0.342 | [-3.306, -1.963] | < 0.0001 | 0.1574 |
+
+### Game Engine Linear Demand Parameters ($Q = a - b \cdot P + c \cdot P_F + d \cdot X$)
+
+| Item ID | Store | Intercept $a$ | Own-Price Slope $b$ | Cross-Price Slope $c$ | R² | Mean Price ($) | Mean Sales |
+| :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
+| `FOODS_3_090` | `CA_1` | 165.394 | 79.181 | 0.50 (cfg) | 0.1948 | $1.38 | 66.49 |
+| `FOODS_3_090` | `CA_2` | 58.724 | 21.402 | 0.50 (cfg) | 0.1572 | $1.37 | 29.36 |
+| `FOODS_3_124` | `CA_1` | 32.340 | 5.080 | 0.50 (cfg) | 0.2419 | $5.38 | 5.62 |
+| `FOODS_3_124` | `CA_2` | 21.532 | 3.562 | 0.50 (cfg) | 0.2087 | $5.38 | 3.21 |
+| `FOODS_3_202` | `CA_1` | 62.783 | 10.717 | 0.50 (cfg) | 0.2450 | $4.32 | 16.40 |
+| `FOODS_3_202` | `CA_2` | 12.213 | 1.512 | 0.50 (cfg) | 0.1574 | $4.31 | 8.54 |
+| `FOODS_3_704` | `CA_1` | 27.766 | 5.241 | 0.50 (cfg) | 0.2280 | $4.31 | 4.61 |
+| `FOODS_3_704` | `CA_2` | 16.433 | 3.204 | 0.50 (cfg) | 0.1727 | $4.31 | 2.94 |
+| `FOODS_3_156` | `CA_1` | 31.141 | 6.891 | 0.50 (cfg) | 0.0939 | $3.85 | 5.81 |
 
 ## Interfaces (function signatures)
 
-### `src.data.loader`
-- `load_calendar(path: Optional[Union[str, Path]] = None) -> pd.DataFrame`
-- `load_prices(path: Optional[Union[str, Path]] = None, store_ids: Optional[List[str]] = None, item_ids: Optional[List[str]] = None) -> pd.DataFrame`
-- `load_sales(path: Optional[Union[str, Path]] = None, category: Optional[str] = None, store_ids: Optional[List[str]] = None, item_ids: Optional[List[str]] = None) -> pd.DataFrame`
-- `rank_candidate_items(prices_df: pd.DataFrame, sales_df: pd.DataFrame, stores: Optional[List[str]] = None, top_n: int = 20) -> pd.DataFrame`
+### `src.demand.demand_model`
+- `class DemandModel(model: Any, feature_names: List[str], min_observed_price: float, max_observed_price: float, model_name: str)`
+  - `predict(X: Union[pd.DataFrame, np.ndarray]) -> np.ndarray`
+  - `predict_demand(price: float, context_features: Union[Dict[str, Any], pd.Series, pd.DataFrame]) -> float`
+  - `price_response_curve(context_features: Union[Dict[str, Any], pd.Series], price_grid: Optional[np.ndarray] = None, min_price: Optional[float] = None, max_price: Optional[float] = None, n_points: int = 30) -> pd.DataFrame`
+- `fit_linear_approximation(df: pd.DataFrame, item_id: str, store_id: str, default_c: float = 0.50) -> Dict[str, Any]`
+- `save_demand_model(wrapper: DemandModel, path: Optional[Union[str, Path]] = None) -> Path`
+- `load_demand_model(path: Optional[Union[str, Path]] = None) -> DemandModel`
 
-### `src.data.preprocessing`
-- `melt_sales_to_long(sales_df: pd.DataFrame) -> pd.DataFrame`
-- `clean_and_merge(sales_long: pd.DataFrame, calendar_df: pd.DataFrame, prices_df: pd.DataFrame) -> pd.DataFrame`
-- `flag_outliers(df: pd.DataFrame, iqr_multiplier: float = 3.0) -> pd.DataFrame`
-- `run_preprocessing(category: Optional[str] = DEFAULT_CATEGORY, stores: Optional[List[str]] = None, items: Optional[List[str]] = None) -> pd.DataFrame`
+### `src.demand.elasticity`
+- `estimate_log_log_elasticity(df: pd.DataFrame, item_id: Optional[str] = None, store_id: Optional[str] = None, controls: Optional[List[str]] = None) -> Dict[str, Any]`
+- `compute_per_item_elasticities(df: pd.DataFrame, items: Optional[List[str]] = None, stores: Optional[List[str]] = None) -> pd.DataFrame`
+- `plot_elasticity_comparison(elasticity_df: pd.DataFrame) -> go.Figure`
 
-### `src.data.feature_engineering`
-- `add_lag_features(df: pd.DataFrame, lags: List[int] = [1, 7, 14, 28]) -> pd.DataFrame`
-- `add_rolling_features(df: pd.DataFrame, windows: List[int] = [7, 28]) -> pd.DataFrame`
-- `add_price_features(df: pd.DataFrame) -> pd.DataFrame`
-- `add_calendar_features(df: pd.DataFrame) -> pd.DataFrame`
-- `add_log_transforms(df: pd.DataFrame) -> pd.DataFrame`
-- `build_feature_pipeline(df: pd.DataFrame) -> pd.DataFrame`
-- `chronological_split(df: pd.DataFrame, test_days: int = 28, val_days: int = 28) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]`
-
-### `src.data.eda`
-- `compute_market_kpis(df: pd.DataFrame, item_id: Optional[str] = None, store_id: Optional[str] = None) -> pd.DataFrame`
-- `plot_sales_and_price_over_time(df: pd.DataFrame, item_id: str, store_id: str) -> go.Figure`
-- `plot_price_vs_quantity(df: pd.DataFrame, item_id: str, store_id: str, log_scale: bool = False, add_trendline: bool = True) -> go.Figure`
-- `plot_sales_distribution(df: pd.DataFrame, item_id: Optional[str] = None, store_id: Optional[str] = None) -> go.Figure`
-- `plot_seasonality(df: pd.DataFrame, item_id: Optional[str] = None, store_id: Optional[str] = None, freq: str = "dow") -> go.Figure`
-- `plot_price_change_vs_sales_change(df: pd.DataFrame, item_id: Optional[str] = None, store_id: Optional[str] = None) -> go.Figure`
-- `plot_promotion_effect(df: pd.DataFrame, item_id: Optional[str] = None, store_id: Optional[str] = None) -> go.Figure`
-- `plot_product_comparison(df: pd.DataFrame, item_ids: Optional[List[str]] = None, metric: str = "sales") -> go.Figure`
+### `src.demand.forecasting`
+- `class SeasonalNaiveForecaster(lag_col: str = "lag_sales_7")`
+  - `fit(X: pd.DataFrame, y: Optional[pd.Series] = None) -> SeasonalNaiveForecaster`
+  - `predict(X: pd.DataFrame) -> np.ndarray`
+- `safe_wmape(y_true: Union[pd.Series, np.ndarray], y_pred: Union[pd.Series, np.ndarray]) -> float`
+- `train_and_evaluate_models(train_df: pd.DataFrame, val_df: pd.DataFrame, test_df: pd.DataFrame, feature_cols: Optional[List[str]] = None, target_col: str = "sales", save_best: bool = True) -> Tuple[Dict[str, Any], pd.DataFrame, str]`
+- `plot_actual_vs_predicted(actual: Union[pd.Series, np.ndarray], predicted: Union[pd.Series, np.ndarray], dates: Union[pd.Series, np.ndarray], title: str = "Actual vs Predicted Demand") -> go.Figure`
 
 ## Known issues
 
-None. Phase 1 and Phase 2 pipelines and tests passing cleanly. Ready for Phase 3.
+None. Phases 1, 2, and 3 passing 20/20 unit tests cleanly. Ready for Phase 4.
