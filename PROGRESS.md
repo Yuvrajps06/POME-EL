@@ -6,7 +6,7 @@
 - [x] Phase 2: Exploratory Data Analysis & Market Intelligence
 - [x] Phase 3: Demand Modeling & Elasticity Estimation
 - [x] Phase 4: Competitor Response Modeling
-- [ ] Phase 5: Stackelberg Game Optimization Engine
+- [x] Phase 5: Stackelberg Game Optimization Engine
 - [ ] Phase 6: Strategy Comparison & Evaluation Framework
 - [ ] Phase 7: Sensitivity Analysis & Simulation Experiments
 - [ ] Phase 8: Streamlit Dashboard Implementation
@@ -33,83 +33,104 @@
    - **Champion Forecaster**: `Hist Gradient Boosting Regressor` (Test MAE: 3.482, RMSE: 5.915, WMAPE: 36.82%, $R^2$: 0.8081). Serialized to `models/demand_model.pkl`.
    - **Linear Demand Specification**: Extracted structural parameters $Q = a - b \cdot P + c \cdot P_F + d \cdot X$.
 7. **Phase 4 Competitor Response Module**:
-   - **Ground Truth Honesty**: M5 retail data contains NO external competitor prices. Modeled honestly in three labeled modes behind one unified common interface.
-   - **Common Interface**: `get_competitor_price(leader_price, current_follower_price, context, mode, params) -> (follower_price, probability_of_increase)`
-   - **Modes Implemented**:
-     1. `"rule"`: Configurable rule-based response (behaviors: `match`, `undercut`, `maintain`, `raise`, `adaptive`; parameters: `match_probability`, `response_strength`, `undercut_margin`, `noise_std`).
-     2. `"simulated_ml"`: Trained on 5,000 synthetic interaction scenarios generated from known behavioral rules with noise. Champion classifier (`RandomForestClassifier`, 96.1% test accuracy) predicts price increase probability; regressor (`HistGradientBoostingRegressor`) predicts reaction magnitude. Serialized to `models/competitor_model.pkl`. All outputs labeled: *"SIMULATED DATA (not real-world accuracy)"*.
-     3. `"real"`: Stub loader enforcing documented schema `['Date', 'Our_Price', 'Competitor_Price', 'Our_Sales', 'Competitor_Sales']`. Raises clear `FileNotFoundError` if unsupplied.
-   - **Noisy ML Wrapper**: `NoisyCompetitorModelWrapper` introduces controlled error injection to degrade prediction accuracy down to any target level (50% to 90%) for Phase 7 sensitivity benchmarks.
+   - **Ground Truth Honesty**: M5 retail data contains NO external competitor prices. Modeled honestly in three labeled modes behind one unified common interface: `get_competitor_price(...)`.
+   - Modes: `"rule"` (match, undercut, maintain, raise, adaptive), `"simulated_ml"` (Random Forest Classifier + Gradient Boosting Regressor), `"real"` (stub loader).
+   - "Noisy ML" wrapper for sensitivity experiments with target accuracy levels (50% to 90%).
+8. **Phase 5 Pricing Optimization Engine**:
+   - **Linear Demand Engine**: Implemented $Q_L = a - b \cdot P_L + c \cdot P_F + d \cdot X$, clipped at $Q \ge 0$.
+   - **Exogenous Cost Rule**: Profit is $\pi = (P - C) \cdot Q$. Cost $C$ is strictly an exogenous input parameter.
+   - **Closed-Form Equivalence**: Analytical Stackelberg solution $P_L^* = \frac{C_L}{2} + \frac{a_{eff} + c \alpha}{2(b - c \beta)}$ verified to match numerical grid optimizer with zero discrepancy.
+   - **Boundary & Clipping Edge Cases**: Optimizers evaluate across candidate price grid (default $[0.70 \times P_{base}, 1.30 \times P_{base}]$) and explicitly flag unreachable optima at grid boundaries (`at_min_boundary`, `at_max_boundary`, `boundary_warning`), negative margins, and demand choking ($Q=0$).
 
-## Common Competitor Interface
+## Example Calls for Each Strategy
 
+### Strategy A: Traditional Baseline (Ignoring Competitor)
 ```python
-get_competitor_price(
-    leader_price: float,
-    current_follower_price: float,
-    context: Optional[Dict[str, Any]] = None,
-    mode: str = "rule",
-    params: Optional[Dict[str, Any]] = None
-) -> Tuple[float, float]
-# Returns: (follower_price: float, probability_of_increase: float)
+from src.optimization.baseline_optimizer import optimize_baseline
+
+result_a = optimize_baseline(
+    baseline_price=1.38,
+    current_follower_price=1.37,
+    cost=0.83,
+    a=165.39,
+    b=79.18,
+    c=0.50,
+)
+print(f"Strategy A: Rec Price=${result_a.recommended_price:.2f}, Expected Profit=${result_a.expected_profit:.2f}")
+# Output: Strategy A: Rec Price=$1.45, Expected Profit=$31.79
 ```
 
-## Competitor Response Evaluation (Simulated Data)
+### Strategy B: Game-Theoretic Stackelberg (Rule-Based Follower)
+```python
+from src.optimization.game_optimizer import optimize_game_rule
 
-> [!WARNING]
-> **Data Provenance Notice**: M5 retail data contains NO external competitor prices. All competitor reaction models in mode 'simulated_ml' and 'rule' are derived from calibrated behavioral simulations with known response rules. Never claim competitor behavior was learned from M5 retail data directly.
+result_b = optimize_game_rule(
+    baseline_price=1.38,
+    current_follower_price=1.37,
+    cost=0.83,
+    a=165.39,
+    b=79.18,
+    c=0.50,
+    rule_params={"behavior": "match", "match_probability": 0.85},
+)
+print(f"Strategy B: Rec Price=${result_b.recommended_price:.2f}, Predicted Follower=${result_b.predicted_follower_price:.2f}, Expected Profit=${result_b.expected_profit:.2f}")
+# Output: Strategy B: Rec Price=$1.48, Predicted Follower=$1.48, Expected Profit=$31.81
+```
 
-| Metric | Random Forest (Champion) | Logistic Regression | Hist Gradient Boosting |
+### Strategy C: ML-Aware Stackelberg (ML-Predicted Follower)
+```python
+from src.optimization.ml_optimizer import optimize_ml_stackelberg
+
+result_c = optimize_ml_stackelberg(
+    baseline_price=1.38,
+    current_follower_price=1.37,
+    cost=0.83,
+    a=165.39,
+    b=79.18,
+    c=0.50,
+    context={"recent_demand": 66.5, "sales_volatility": 2.5, "snap_CA": 1},
+)
+print(f"Strategy C: Rec Price=${result_c.recommended_price:.2f}, Predicted Follower=${result_c.predicted_follower_price:.2f}, Expected Profit=${result_c.expected_profit:.2f}")
+# Output: Strategy C: Rec Price=$1.48, Predicted Follower=$1.49, Expected Profit=$31.82
+```
+
+## Strategy Comparison Summary (Hero Item `FOODS_3_090`)
+
+| Metric | Strategy A (Baseline) | Strategy B (Game Rule: Match) | Strategy C (ML-Aware Stackelberg) |
 | :--- | :---: | :---: | :---: |
-| **Validation Accuracy** | **96.40%** | 94.80% | 96.13% |
-| **Test Accuracy** | **96.13%** | 94.67% | 95.87% |
-| **Test Precision** | **95.73%** | 94.20% | 95.42% |
-| **Test Recall** | **96.00%** | 94.57% | 95.71% |
-| **Test F1 Score** | **95.86%** | 94.38% | 95.56% |
-| **Test ROC AUC** | **0.9945** | 0.9882 | 0.9931 |
-| **Brier Score** | **0.0299** | 0.0410 | 0.0315 |
-
-**Behavioral Rule Recovery Metrics**:
-- Directional Rule Recovery Rate: **96.13%**
-- Probability Recovery MAE: **0.2083**
-- Price Magnitude Response MAE: **$0.0504**
-- Price Magnitude Response RMSE: **$0.0745**
-
-## Model Comparison (Demand Forecaster - Phase 3)
-
-| Model | Val MAE | Val RMSE | Val WMAPE | Val R² | Test MAE | Test RMSE | Test WMAPE | Test R² |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **Hist Gradient Boosting** (Champion) | **3.111** | **5.920** | **35.28%** | **0.8139** | **3.482** | **5.915** | **36.82%** | **0.8081** |
-| **Ridge Regression** | 3.306 | 6.182 | 37.48% | 0.7971 | 3.618 | 6.136 | 38.25% | 0.7935 |
-| **Linear Regression** | 3.305 | 6.184 | 37.47% | 0.7969 | 3.623 | 6.140 | 38.30% | 0.7932 |
-| **Random Forest** | 3.570 | 6.314 | 40.48% | 0.7883 | 3.823 | 6.281 | 40.42% | 0.7836 |
-| **Seasonal Naive** (Lag-7 Baseline) | 3.908 | 7.803 | 44.32% | 0.6767 | 4.443 | 7.743 | 46.97% | 0.6712 |
+| **Recommended Price ($)** | **$1.45** | **$1.48** | **$1.48** |
+| **Predicted Follower Price ($)** | $1.37 (assumed fixed) | $1.48 (matched) | $1.49 (predicted) |
+| **Expected Daily Demand (units)** | 51.1 | 49.0 | 49.0 |
+| **Unit Margin ($)** | $0.62 | $0.65 | $0.65 |
+| **Expected Profit ($)** | **$31.79** | **$31.81** | **$31.82** |
+| **Profit vs Baseline** | Baseline (0.0%) | +0.06% | +0.09% |
 
 ## Interfaces (function signatures)
 
-### `src.competitor.response_simulator`
-- `rule_based_response(leader_price: float, current_follower_price: float, context: Optional[Dict[str, Any]] = None, params: Optional[Dict[str, Any]] = None) -> Tuple[float, float]`
-- `generate_synthetic_competitor_dataset(processed_df: pd.DataFrame, n_samples: int = 4000, behavior: str = "adaptive", noise_std: float = 0.02, random_seed: int = RANDOM_SEED) -> pd.DataFrame`
+### `src.game.demand_function`
+- `linear_demand(leader_price: float, follower_price: float, a: float, b: float, c: float = 0.50, context_shift: float = 0.0) -> float`
+- `calculate_context_shift(context: Optional[Dict[str, Any]] = None, coefficients: Optional[Dict[str, float]] = None) -> float`
 
-### `src.competitor.response_model`
-- `get_competitor_price(leader_price: float, current_follower_price: float, context: Optional[Dict[str, Any]] = None, mode: str = "rule", params: Optional[Dict[str, Any]] = None) -> Tuple[float, float]`
-- `class CompetitorResponseModel(classifier: Any, regressor: Any, feature_names: List[str], classifier_name: str, regressor_name: str)`
-  - `predict_response(features_df: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray]`
-  - `predict_single(leader_price: float, current_follower_price: float, context: Optional[Dict[str, Any]] = None) -> Tuple[float, float]`
-- `class NoisyCompetitorModelWrapper(base_model: CompetitorResponseModel, target_accuracy: float = 0.70, random_seed: int = RANDOM_SEED)`
-  - `predict_single(leader_price: float, current_follower_price: float, context: Optional[Dict[str, Any]] = None) -> Tuple[float, float]`
-- `load_real_competitor_data(filepath: Optional[Union[str, Path]] = None) -> pd.DataFrame`
-- `train_competitor_models(train_df: pd.DataFrame, val_df: pd.DataFrame, feature_cols: Optional[List[str]] = None, save_path: Optional[Union[str, Path]] = None) -> Tuple[CompetitorResponseModel, Dict[str, Any]]`
-- `save_competitor_model(wrapper: CompetitorResponseModel, path: Optional[Union[str, Path]] = None) -> Path`
-- `load_competitor_model(path: Optional[Union[str, Path]] = None) -> CompetitorResponseModel`
+### `src.game.profit_function`
+- `calculate_profit(price: float, cost: float, demand: float) -> float`
+- `calculate_margin(price: float, cost: float) -> float`
+- `calculate_margin_pct(price: float, cost: float) -> float`
+- `summarize_financials(price: float, cost: float, demand: float) -> Dict[str, float]`
 
-### `src.competitor.response_evaluation`
-- `evaluate_response_classifier(y_true: Union[pd.Series, np.ndarray], y_prob: Union[pd.Series, np.ndarray], threshold: float = 0.50) -> Dict[str, Any]`
-- `evaluate_rule_recovery(test_df: pd.DataFrame, predicted_probs: np.ndarray, predicted_prices: np.ndarray) -> Dict[str, Any]`
-- `plot_confusion_matrix(cm: List[List[int]], labels: Tuple[str, str] = ("Maintain/Cut", "Increase")) -> go.Figure`
-- `plot_calibration_curve(y_true: Union[pd.Series, np.ndarray], y_prob: Union[pd.Series, np.ndarray], n_bins: int = 10) -> go.Figure`
-- `plot_rule_recovery(leader_pct_changes: np.ndarray, true_probs: np.ndarray, predicted_probs: np.ndarray) -> go.Figure`
+### `src.game.stackelberg`
+- `closed_form_stackelberg(a: float, b: float, c: float, alpha: float, beta: float, cost: float, context_shift: float = 0.0) -> Dict[str, float]`
+- `closed_form_baseline_monopoly(a: float, b: float, cost: float, c: float = 0.0, constant_follower_price: float = 0.0, context_shift: float = 0.0) -> Dict[str, float]`
+
+### `src.optimization.baseline_optimizer`
+- `class OptimizationResult(strategy: str, recommended_price: float, predicted_follower_price: float, expected_demand: float, expected_profit: float, expected_revenue: float, cost: float, unit_margin: float, margin_pct: float, baseline_price: float, grid_min: float, grid_max: float, at_min_boundary: bool, at_max_boundary: bool, boundary_warning: bool, q_clipped: bool, negative_margin: bool, grid_evaluations: pd.DataFrame)`
+- `optimize_baseline(baseline_price: float, current_follower_price: float, cost: float, a: float, b: float, c: float = 0.50, context_shift: float = 0.0, min_factor: float = PRICE_GRID_MIN_FACTOR, max_factor: float = PRICE_GRID_MAX_FACTOR, num_steps: int = PRICE_GRID_NUM_STEPS, custom_grid: Optional[np.ndarray] = None) -> OptimizationResult`
+
+### `src.optimization.game_optimizer`
+- `optimize_game_rule(baseline_price: float, current_follower_price: float, cost: float, a: float, b: float, c: float = 0.50, context_shift: float = 0.0, rule_params: Optional[Dict[str, Any]] = None, min_factor: float = PRICE_GRID_MIN_FACTOR, max_factor: float = PRICE_GRID_MAX_FACTOR, num_steps: int = PRICE_GRID_NUM_STEPS, custom_grid: Optional[np.ndarray] = None) -> OptimizationResult`
+
+### `src.optimization.ml_optimizer`
+- `optimize_ml_stackelberg(baseline_price: float, current_follower_price: float, cost: float, a: float, b: float, c: float = 0.50, context: Optional[Dict[str, Any]] = None, context_shift: float = 0.0, competitor_model: Optional[CompetitorResponseModel] = None, target_accuracy: Optional[float] = None, min_factor: float = PRICE_GRID_MIN_FACTOR, max_factor: float = PRICE_GRID_MAX_FACTOR, num_steps: int = PRICE_GRID_NUM_STEPS, custom_grid: Optional[np.ndarray] = None) -> OptimizationResult`
 
 ## Known issues
 
-None. Phases 1–4 passing 28/28 unit tests cleanly. Ready for Phase 5.
+None. Phases 1–5 passing 35/35 unit tests cleanly. Ready for Phase 6.
