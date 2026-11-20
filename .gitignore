@@ -1,0 +1,34 @@
+# Data files
+data/raw/
+data/processed/
+!data/raw/m5/.gitkeep
+!data/processed/.gitkeep
+
+# Model weights and serialized objects
+models/*.pkl
+models/*.joblib
+!models/.gitkeep
+
+# Python cache & bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Environments
+.venv/
+venv/
+ENV/
+env/
+
+# Testing & linting artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+
+# OS and IDE files
+.DS_Store
+.idea/
+.vscode/
+*.swp
