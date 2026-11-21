@@ -41,7 +41,8 @@ def render() -> None:
         "profit_improvement_pct", "profit_std", "downside_risk_p5", "min_total_profit",
         "mean_period_profit", "mean_period_revenue", "mean_period_demand", "mean_price"
     ]
-    st.dataframe(df_summary[display_cols], use_container_width=True)
+    existing_cols = [c for c in display_cols if c in df_summary.columns]
+    st.dataframe(df_summary[existing_cols], use_container_width=True)
 
     st.markdown("---")
 

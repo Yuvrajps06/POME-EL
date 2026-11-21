@@ -12,6 +12,8 @@ from dashboard.utils import (
     load_model_comparison_table,
     load_elasticity_table,
     load_linear_demand_parameters,
+    safe_style_dataframe,
+    safe_scalar,
 )
 from src.demand.elasticity import plot_elasticity_comparison, OBSERVATIONAL_CAVEAT
 from src.demand.forecasting import plot_actual_vs_predicted
@@ -34,8 +36,13 @@ def render() -> None:
     df_models = load_model_comparison_table()
     if not df_models.empty:
         st.dataframe(
-            df_models.style.highlight_min(subset=["Test MAE", "Test RMSE"], color="#d4edda")
-            .highlight_max(subset=["Test R2"], color="#d4edda"),
+            safe_style_dataframe(
+                df_models,
+                min_cols=["test_mae", "test_rmse", "Test MAE", "Test RMSE"],
+                max_cols=["test_r2", "Test R2"],
+                min_color="#d4edda",
+                max_color="#d4edda",
+            ),
             use_container_width=True,
         )
         st.success(
@@ -82,8 +89,10 @@ def render() -> None:
     if not df_elast.empty:
         col1, col2 = st.columns([1, 1])
         with col1:
+            desired_cols = ["item_id", "store_id", "elasticity", "ci_lower", "ci_upper", "p_value", "r2", "r_squared"]
+            existing_cols = [c for c in desired_cols if c in df_elast.columns]
             st.dataframe(
-                df_elast[["item_id", "store_id", "elasticity", "ci_lower", "ci_upper", "p_value", "r_squared"]],
+                df_elast[existing_cols],
                 use_container_width=True,
                 height=350,
             )
@@ -110,7 +119,12 @@ def render() -> None:
             st.metric("Observed Price Range", f"${p_min_obs:.2f} – ${p_max_obs:.2f}")
 
         grid_prices = np.linspace(test_min_p, test_max_p, 40)
-        curve_df = model_wrapper.price_response_curve(price_grid=grid_prices)
+        context = (
+            test_sub.iloc[-1].to_dict()
+            if (not df.empty and len(test_sub) > 0)
+            else {"lag_sales_1": 60.0, "lag_sales_7": 65.0, "rolling_mean_7": 64.0, "rolling_mean_28": 66.0, "is_weekend": 0, "has_event": 0, "snap_CA": 0}
+        )
+        curve_df = model_wrapper.price_response_curve(context_features=context, price_grid=grid_prices)
 
         fig_curve = px.line(
             curve_df,

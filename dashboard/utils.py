@@ -1,7 +1,8 @@
 """Shared utilities, data caching, and model loaders for the Streamlit dashboard."""
 
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
+import numpy as np
 import pandas as pd
 import streamlit as st
 
@@ -13,7 +14,7 @@ NOTEBOOKS_DIR = Path(__file__).resolve().parent.parent / "notebooks"
 EXPERIMENTS_DIR = DATA_PROCESSED_DIR / "experiments"
 
 
-@st.cache_data(show_spinner="Loading M5 processed data...")
+@st.cache_resource(show_spinner="Loading M5 processed data...")
 def load_processed_dataset() -> pd.DataFrame:
     """Load processed M5 dataset, preferring parquet format for speed."""
     parquet_path = DATA_PROCESSED_DIR / "m5_processed.parquet"
@@ -52,7 +53,7 @@ def get_cached_competitor_model() -> Optional[CompetitorResponseModel]:
         return None
 
 
-@st.cache_data
+@st.cache_resource
 def load_market_kpis_table() -> pd.DataFrame:
     """Load precomputed market intelligence KPIs."""
     path = NOTEBOOKS_DIR / "market_kpis.csv"
@@ -61,7 +62,7 @@ def load_market_kpis_table() -> pd.DataFrame:
     return pd.DataFrame()
 
 
-@st.cache_data
+@st.cache_resource
 def load_model_comparison_table() -> pd.DataFrame:
     """Load precomputed demand forecasting model evaluation table."""
     path = NOTEBOOKS_DIR / "model_comparison.csv"
@@ -70,7 +71,7 @@ def load_model_comparison_table() -> pd.DataFrame:
     return pd.DataFrame()
 
 
-@st.cache_data
+@st.cache_resource
 def load_elasticity_table() -> pd.DataFrame:
     """Load precomputed log-log elasticity estimates."""
     path = NOTEBOOKS_DIR / "elasticity_estimates.csv"
@@ -79,7 +80,7 @@ def load_elasticity_table() -> pd.DataFrame:
     return pd.DataFrame()
 
 
-@st.cache_data
+@st.cache_resource
 def load_linear_demand_parameters() -> pd.DataFrame:
     """Load structural linear demand parameters (a, b)."""
     path = NOTEBOOKS_DIR / "linear_demand_parameters.csv"
@@ -88,7 +89,7 @@ def load_linear_demand_parameters() -> pd.DataFrame:
     return pd.DataFrame()
 
 
-@st.cache_data
+@st.cache_resource
 def load_strategy_comparison_data() -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Load precomputed strategy comparison benchmark datasets."""
     exp_dir = DATA_PROCESSED_DIR / "experiments"
@@ -103,7 +104,7 @@ def load_strategy_comparison_data() -> Tuple[pd.DataFrame, pd.DataFrame, pd.Data
     return df_summary, df_traj, df_runs
 
 
-@st.cache_data
+@st.cache_resource
 def load_sensitivity_datasets() -> Dict[str, pd.DataFrame]:
     """Load precomputed Phase 7 sensitivity analysis sweep tables."""
     exp_dir = DATA_PROCESSED_DIR / "experiments"
@@ -118,3 +119,35 @@ def load_sensitivity_datasets() -> Dict[str, pd.DataFrame]:
     for k, p in files.items():
         dfs[k] = pd.read_csv(p) if p.exists() else pd.DataFrame()
     return dfs
+
+
+def safe_scalar(value: Any, default: Any = 0.0) -> Any:
+    """Coerce value to a Python scalar if it is a Series, 1-element DataFrame, array, or None."""
+    if isinstance(value, pd.DataFrame):
+        return value.iloc[0, 0] if not value.empty else default
+    if isinstance(value, (pd.Series, list, tuple, np.ndarray)):
+        return value[0] if len(value) > 0 else default
+    if value is None or pd.isna(value):
+        return default
+    return value
+
+
+def safe_style_dataframe(
+    df: pd.DataFrame,
+    min_cols: Optional[List[str]] = None,
+    max_cols: Optional[List[str]] = None,
+    min_color: str = "#d4edda",
+    max_color: str = "#d4edda",
+) -> Any:
+    """Safely apply highlight_min and highlight_max only to columns present in df."""
+    styler = df.style
+    if min_cols:
+        existing_min = [c for c in min_cols if c in df.columns]
+        if existing_min:
+            styler = styler.highlight_min(subset=existing_min, color=min_color)
+    if max_cols:
+        existing_max = [c for c in max_cols if c in df.columns]
+        if existing_max:
+            styler = styler.highlight_max(subset=existing_max, color=max_color)
+    return styler
+

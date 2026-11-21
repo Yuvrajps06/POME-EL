@@ -3,7 +3,11 @@
 import streamlit as st
 import pandas as pd
 
-from dashboard.utils import load_processed_dataset, load_market_kpis_table
+from dashboard.utils import (
+    load_processed_dataset,
+    load_market_kpis_table,
+    safe_scalar,
+)
 from src.data.eda import (
     compute_market_kpis,
     plot_sales_and_price_over_time,
@@ -52,22 +56,29 @@ def render() -> None:
     with col3:
         log_scale = st.checkbox("Log-log Empirical Demand Curve", value=True)
 
-    # Compute & Display KPIs
-    kpis = compute_market_kpis(df, item_id=selected_item, store_id=selected_store)
+    # Compute & Display KPIs for selected item & store
+    kpi_df = compute_market_kpis(df, item_id=selected_item, store_id=selected_store)
+    kpi_dict = kpi_df.iloc[0].to_dict() if not kpi_df.empty else {}
+
+    avg_price = float(safe_scalar(kpi_dict.get("avg_price", 0.0), 0.0))
+    avg_demand = float(safe_scalar(kpi_dict.get("avg_daily_demand", 0.0), 0.0))
+    price_cv = float(safe_scalar(kpi_dict.get("price_cv", 0.0), 0.0))
+    price_regime = str(kpi_dict.get("price_volatility", kpi_dict.get("volatility_category", "N/A")))
+    demand_slope = float(safe_scalar(kpi_dict.get("demand_slope", kpi_dict.get("demand_trend_slope", 0.0)), 0.0))
+    trend_label = str(kpi_dict.get("demand_trend", "Stable"))
 
     st.markdown("### Market Intelligence KPIs")
     m1, m2, m3, m4, m5 = st.columns(5)
     with m1:
-        st.metric("Average Selling Price", f"${kpis.get('avg_price', 0):.2f}")
+        st.metric("Average Selling Price", f"${avg_price:.2f}")
     with m2:
-        st.metric("Average Daily Demand", f"{kpis.get('avg_daily_demand', 0):.1f} units")
+        st.metric("Average Daily Demand", f"{avg_demand:.1f} units")
     with m3:
-        st.metric("Price Volatility (CV)", f"{kpis.get('price_cv', 0):.4f}")
+        st.metric("Price Volatility (CV)", f"{price_cv:.4f}")
     with m4:
-        st.metric("Price Regime", kpis.get("volatility_category", "N/A"))
+        st.metric("Price Regime", price_regime)
     with m5:
-        trend_label = "Upward" if kpis.get("demand_trend_slope", 0) > 0.005 else ("Downward" if kpis.get("demand_trend_slope", 0) < -0.005 else "Stable")
-        st.metric("Demand Trend", f"{trend_label} ({kpis.get('demand_trend_slope', 0):+.3f}/day)")
+        st.metric("Demand Trend", f"{trend_label} ({demand_slope:+.3f}/day)")
 
     st.markdown("---")
 
@@ -115,5 +126,6 @@ def render() -> None:
         default=[it for it in ["FOODS_3_090", "FOODS_3_723", "FOODS_3_491", "FOODS_3_124"] if it in available_items][:4],
     )
     if compare_items:
-        fig_comp = plot_product_comparison(df, item_ids=compare_items, store_id=selected_store)
+        df_store = df[df["store_id"] == selected_store] if "store_id" in df.columns else df
+        fig_comp = plot_product_comparison(df_store, item_ids=compare_items)
         st.plotly_chart(fig_comp, use_container_width=True)

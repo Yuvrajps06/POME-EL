@@ -263,7 +263,9 @@ print(f"Strategy C: Rec Price=${result_c.recommended_price:.2f}, Predicted Follo
 - `dashboard.utils.load_processed_dataset() -> pd.DataFrame`
 - `dashboard.utils.get_cached_demand_model() -> Optional[Any]`
 - `dashboard.utils.get_cached_competitor_model() -> Optional[CompetitorResponseModel]`
+- `dashboard.utils.safe_scalar(value: Any, default: Any = 0.0) -> Any`
+- `dashboard.utils.safe_style_dataframe(df: pd.DataFrame, min_cols: Optional[List[str]] = None, max_cols: Optional[List[str]] = None, min_color: str = "#d4edda", max_color: str = "#d4edda") -> Any`
 
 ## Known issues
 
-None. All Phases 1–9 complete, fully tested (57/57 pytest passing), audited against methodological rules, and documented with end-to-end reproducibility.
+None. All Phases 1–9 complete, fully tested (68/68 pytest passing), audited against methodological rules, and documented with end-to-end reproducibility.

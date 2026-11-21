@@ -129,11 +129,13 @@ def render() -> None:
                 fig_cum = plot_cumulative_profit(df_traj)
                 st.plotly_chart(fig_cum, use_container_width=True)
 
+        overview_cols = [
+            "strategy", "mean_total_profit", "ci_95_lower", "ci_95_upper",
+            "profit_improvement_pct", "profit_std", "downside_risk_p5", "mean_price"
+        ]
+        existing_cols = [c for c in overview_cols if c in df_summary.columns]
         st.dataframe(
-            df_summary[[
-                "strategy", "mean_total_profit", "ci_95_lower", "ci_95_upper",
-                "profit_improvement_pct", "profit_std", "downside_risk_p5", "mean_price"
-            ]],
+            df_summary[existing_cols],
             use_container_width=True,
         )
     else:

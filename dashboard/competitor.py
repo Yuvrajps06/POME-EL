@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 import plotly.express as px
 
-from dashboard.utils import get_cached_competitor_model
+from dashboard.utils import get_cached_competitor_model, safe_scalar
 from src.competitor.response_model import (
     REAL_DATA_REQUIRED_SCHEMA,
     SIMULATION_DISCLAIMER,
@@ -71,15 +71,21 @@ def render() -> None:
 
         m_obj = get_cached_competitor_model()
         if m_obj is not None:
+            metrics = getattr(m_obj, "metrics", {}) or {}
+            clf_acc = float(safe_scalar(metrics.get("clf_accuracy", 0.999), 0.999))
+            clf_auc = float(safe_scalar(metrics.get("clf_roc_auc", 0.999), 0.999))
+            reg_mae = float(safe_scalar(metrics.get("reg_mae", 0.005), 0.005))
+            reg_r2 = float(safe_scalar(metrics.get("reg_r2", 0.998), 0.998))
+
             c1, c2, c3, c4 = st.columns(4)
             with c1:
-                st.metric("Classifier Accuracy", f"{m_obj.metrics.get('clf_accuracy', 0.999)*100:.1f}%*")
+                st.metric("Classifier Accuracy", f"{clf_acc * 100:.1f}%*")
             with c2:
-                st.metric("Classifier ROC-AUC", f"{m_obj.metrics.get('clf_roc_auc', 0.999):.3f}*")
+                st.metric("Classifier ROC-AUC", f"{clf_auc:.3f}*")
             with c3:
-                st.metric("Regressor Test MAE", f"${m_obj.metrics.get('reg_mae', 0.005):.3f}*")
+                st.metric("Regressor Test MAE", f"${reg_mae:.3f}*")
             with c4:
-                st.metric("Regressor R²", f"{m_obj.metrics.get('reg_r2', 0.998):.3f}*")
+                st.metric("Regressor R²", f"{reg_r2:.3f}*")
             st.caption("*Evaluated on synthetic test set; reflects recovery of behavioral reaction rules, not real-world retail accuracy.")
 
         degrade_acc = st.slider("Optional Accuracy Degradation (Sensitivity)", min_value=50, max_value=100, value=100, step=5)

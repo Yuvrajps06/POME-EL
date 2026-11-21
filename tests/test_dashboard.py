@@ -29,15 +29,23 @@ def test_dashboard_modules_importable():
 
 def test_dashboard_utils_caching_and_graceful_missing(tmp_path):
     """Test dashboard utilities handle missing files gracefully without crashing."""
-    with patch("dashboard.utils.DATA_PROCESSED_DIR", tmp_path):
-        df = utils.load_processed_dataset()
-        assert df.empty
+    try:
+        utils.load_processed_dataset.clear()
+        utils.load_strategy_comparison_data.clear()
+        utils.load_sensitivity_datasets.clear()
+        with patch("dashboard.utils.DATA_PROCESSED_DIR", tmp_path):
+            df = utils.load_processed_dataset()
+            assert df.empty
 
-        d1, d2, d3 = utils.load_strategy_comparison_data()
-        assert d1.empty and d2.empty and d3.empty
+            d1, d2, d3 = utils.load_strategy_comparison_data()
+            assert d1.empty and d2.empty and d3.empty
 
-        sens_dict = utils.load_sensitivity_datasets()
-        assert all(v.empty for v in sens_dict.values())
+            sens_dict = utils.load_sensitivity_datasets()
+            assert all(v.empty for v in sens_dict.values())
+    finally:
+        utils.load_processed_dataset.clear()
+        utils.load_strategy_comparison_data.clear()
+        utils.load_sensitivity_datasets.clear()
 
 
 def test_optimizer_edge_cases_extreme_grid():
