@@ -18,13 +18,16 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.data.loader import load_m5_data
-from src.data.preprocessing import preprocess_m5
-from src.data.feature_engineering import generate_features, chronological_split
+from src.data.loader import load_calendar, load_prices, load_sales
+from src.data.preprocessing import run_preprocessing
+from src.data.feature_engineering import build_feature_pipeline, chronological_split
 from src.utils.config import (
     DATA_PROCESSED_DIR,
     DATA_RAW_DIR,
     DATA_SAMPLE_DIR,
+    DEFAULT_CATEGORY,
+    DEFAULT_ITEMS,
+    DEFAULT_STORES,
     SELECTED_ITEMS,
     SELECTED_STORES,
 )
@@ -42,12 +45,14 @@ def run_pipeline(force_reprocess_data: bool = False) -> None:
     processed_parquet = DATA_PROCESSED_DIR / "m5_processed.parquet"
 
     if not processed_parquet.exists() or force_reprocess_data:
-        print("  Loading raw M5 datasets...")
-        sales, calendar, prices = load_m5_data(DATA_RAW_DIR / "m5")
-        print("  Preprocessing selected subset...")
-        clean_df = preprocess_m5(sales, calendar, prices, SELECTED_STORES, SELECTED_ITEMS)
+        print("  Loading raw M5 datasets & preprocessing selected subset...")
+        clean_df = run_preprocessing(
+            category=DEFAULT_CATEGORY,
+            stores=SELECTED_STORES,
+            items=SELECTED_ITEMS,
+        )
         print("  Generating engineered features (lags, rolling stats, calendar)...")
-        final_df = generate_features(clean_df)
+        final_df = build_feature_pipeline(clean_df)
 
         DATA_PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
         DATA_SAMPLE_DIR.mkdir(parents=True, exist_ok=True)

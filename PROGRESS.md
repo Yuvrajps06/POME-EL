@@ -175,6 +175,30 @@ print(f"Strategy C: Rec Price=${result_c.recommended_price:.2f}, Predicted Follo
 
 ## Interfaces (function signatures)
 
+### `src.data.loader`
+- `load_calendar(path: Optional[Union[str, Path]] = None) -> pd.DataFrame`
+- `load_prices(path: Optional[Union[str, Path]] = None, store_ids: Optional[List[str]] = None, item_ids: Optional[List[str]] = None) -> pd.DataFrame`
+- `load_sales(path: Optional[Union[str, Path]] = None, category: Optional[str] = None, store_ids: Optional[List[str]] = None, item_ids: Optional[List[str]] = None) -> pd.DataFrame`
+- `rank_candidate_items(prices_df: pd.DataFrame, sales_df: pd.DataFrame, stores: Optional[List[str]] = None, top_n: int = 20) -> pd.DataFrame`
+
+### `src.data.preprocessing`
+- `run_preprocessing(category: Optional[str] = DEFAULT_CATEGORY, stores: Optional[List[str]] = None, items: Optional[List[str]] = None) -> pd.DataFrame`
+- `melt_sales_to_long(sales_df: pd.DataFrame) -> pd.DataFrame`
+- `clean_and_merge(sales_long: pd.DataFrame, calendar_df: pd.DataFrame, prices_df: pd.DataFrame) -> pd.DataFrame`
+- `flag_outliers(df: pd.DataFrame, iqr_multiplier: float = 3.0) -> pd.DataFrame`
+
+### `src.data.feature_engineering`
+- `build_feature_pipeline(df: pd.DataFrame) -> pd.DataFrame`
+- `chronological_split(df: pd.DataFrame, test_days: int = 28, val_days: int = 28) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]`
+- `add_lag_features(df: pd.DataFrame, lags: List[int] = [1, 7, 14, 28]) -> pd.DataFrame`
+- `add_rolling_features(df: pd.DataFrame, windows: List[int] = [7, 28]) -> pd.DataFrame`
+- `add_price_features(df: pd.DataFrame) -> pd.DataFrame`
+- `add_calendar_features(df: pd.DataFrame) -> pd.DataFrame`
+- `add_log_transforms(df: pd.DataFrame) -> pd.DataFrame`
+
+### `scripts.run_pipeline`
+- `run_pipeline(force_reprocess_data: bool = False) -> None`
+
 ### `src.experiments.sensitivity`
 - `sweep_accuracy_and_response_strength(n_simulations: int = 15, n_periods: int = 14, competitor_model: Optional[CompetitorResponseModel] = None, master_seed: int = RANDOM_SEED, cache_path: Optional[Path] = None, force_recompute: bool = False) -> pd.DataFrame`
 - `sweep_accuracy_curves(n_simulations: int = 20, n_periods: int = 14, competitor_model: Optional[CompetitorResponseModel] = None, master_seed: int = RANDOM_SEED, cache_path: Optional[Path] = None, force_recompute: bool = False) -> pd.DataFrame`
@@ -242,4 +266,4 @@ print(f"Strategy C: Rec Price=${result_c.recommended_price:.2f}, Predicted Follo
 
 ## Known issues
 
-None. All Phases 1–9 complete, fully tested (51/51 pytest passing), audited against methodological rules, and documented with end-to-end reproducibility.
+None. All Phases 1–9 complete, fully tested (57/57 pytest passing), audited against methodological rules, and documented with end-to-end reproducibility.

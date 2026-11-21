@@ -49,6 +49,10 @@ DEFAULT_ITEMS: List[str] = [
     "FOODS_3_704",  # 6 distinct prices, 15.7% zero-rate
 ]
 
+# Aliases for selection
+SELECTED_STORES: List[str] = DEFAULT_STORES
+SELECTED_ITEMS: List[str] = DEFAULT_ITEMS
+
 # Primary Item for Focused Modeling Demonstrations
 PRIMARY_MODELING_ITEM: str = "FOODS_3_090"
 
