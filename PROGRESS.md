@@ -34,7 +34,15 @@
    - **Linear Demand Specification**: Extracted structural parameters $Q = a - b \cdot P + c \cdot P_F + d \cdot X$.
 7. **Phase 4 Competitor Response Module**:
    - **Ground Truth Honesty**: M5 retail data contains NO external competitor prices. Modeled honestly in three labeled modes behind one unified common interface: `get_competitor_price(...)`.
-   - Modes: `"rule"` (match, undercut, maintain, raise, adaptive), `"simulated_ml"` (Random Forest Classifier + Gradient Boosting Regressor), `"real"` (stub loader).
+   - Modes: `"rule"` (match, undercut, maintain, raise, adaptive), `"simulated_ml"` (Logistic Regression / HistGradientBoosting Classifier + HistGradientBoosting Regressor), `"real"` (stub loader).
+   - **Genuinely Stochastic Generator**: Probabilistic Bernoulli response generated from logistic sigmoid of economic features plus response noise (`COMPETITOR_RESPONSE_NOISE = 0.70`), continuous magnitude sampling from response distribution, and unobserved latent factors (competitor inventory shock $\xi_{inv} \sim \mathcal{N}(0, 1)$ and store manager discretion $\xi_{mgr} \sim \mathcal{N}(0, 0.5)$) hidden from the ML model.
+   - **Rigorous Rule-Recovery Benchmark (Chronological Test Set)**:
+     - Majority-Class Baseline: **50.1%**
+     - Trained Model Accuracy: **78.1%** (ROC-AUC 0.854)
+     - True Generating Rule Ceiling (Bayes-Optimal): **83.3%**
+     - Relative Information Gap Closed: **84.3%**
+     - Regressor Test MAE: **$0.188** (R²: 0.970, RMSE: $0.276)
+     - Split: Strict chronological temporal split (Train < 2014-09-29, Val 2014-09-29 to 2015-07-13, Test >= 2015-07-13).
    - "Noisy ML" wrapper for sensitivity experiments with target accuracy levels (50% to 90%).
 8. **Phase 5 Pricing Optimization Engine**:
    - **Linear Demand Engine**: Implemented $Q_L = a - b \cdot P_L + c \cdot P_F + d \cdot X$, clipped at $Q \ge 0$.

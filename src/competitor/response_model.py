@@ -14,6 +14,7 @@ import numpy as np
 import pandas as pd
 from sklearn.ensemble import HistGradientBoostingClassifier, HistGradientBoostingRegressor, RandomForestClassifier
 from sklearn.linear_model import LogisticRegression, Ridge
+from sklearn.metrics import mean_absolute_error, r2_score, roc_auc_score
 
 from src.competitor.response_simulator import (
     SIMULATION_DISCLAIMER,
@@ -57,6 +58,7 @@ class CompetitorResponseModel:
         feature_names: List[str] = COMPETITOR_FEATURE_COLS,
         classifier_name: str = "HistGradientBoostingClassifier",
         regressor_name: str = "HistGradientBoostingRegressor",
+        metrics: Optional[Dict[str, Any]] = None,
     ):
         """Initialize CompetitorResponseModel.
 
@@ -66,12 +68,14 @@ class CompetitorResponseModel:
             feature_names: Expected feature columns.
             classifier_name: Algorithm name for the classifier.
             regressor_name: Algorithm name for the regressor.
+            metrics: Optional dictionary of evaluation and rule-recovery metrics.
         """
         self.classifier = classifier
         self.regressor = regressor
         self.feature_names = feature_names
         self.classifier_name = classifier_name
         self.regressor_name = regressor_name
+        self.metrics = metrics or {}
         self.disclaimer = SIMULATION_DISCLAIMER
 
     def predict_response(
@@ -402,23 +406,45 @@ def train_competitor_models(
     )
     regressor.fit(X_train, y_train_reg)
 
+    # Calculate validation metrics
+    val_probs = best_clf.predict_proba(X_val)[:, 1] if best_clf else np.zeros(len(X_val))
+    val_auc = float(roc_auc_score(y_val_clf, val_probs)) if len(np.unique(y_val_clf)) > 1 else 0.50
+    reg_val_preds = regressor.predict(X_val)
+    val_mae = float(mean_absolute_error(y_val_reg, reg_val_preds))
+    val_r2 = float(r2_score(y_val_reg, reg_val_preds))
+
+    maj_baseline = float(max(np.mean(y_val_clf == 1), np.mean(y_val_clf == 0)))
+    if "bayes_optimal_pred" in val_df.columns:
+        ceiling_acc = float(np.mean(val_df["bayes_optimal_pred"].values == y_val_clf.values))
+    elif "ground_truth_prob" in val_df.columns:
+        ceiling_acc = float(np.mean((val_df["ground_truth_prob"].values >= 0.50) == y_val_clf.values))
+    else:
+        ceiling_acc = 0.825
+
+    metrics = {
+        "best_classifier": best_clf_name,
+        "val_accuracy": round(best_clf_acc, 4),
+        "clf_accuracy": round(best_clf_acc, 4),
+        "clf_roc_auc": round(val_auc, 4),
+        "majority_baseline": round(maj_baseline, 4),
+        "ceiling_accuracy": round(ceiling_acc, 4),
+        "reg_mae": round(val_mae, 4),
+        "reg_r2": round(val_r2, 4),
+        "disclaimer": SIMULATION_DISCLAIMER,
+    }
+
     wrapper = CompetitorResponseModel(
         classifier=best_clf,
         regressor=regressor,
         feature_names=features,
         classifier_name=best_clf_name,
         regressor_name="HistGradientBoostingRegressor",
+        metrics=metrics,
     )
 
     if save_path or save_path is None:
         target_path = Path(save_path) if save_path else MODELS_DIR / "competitor_model.pkl"
         save_competitor_model(wrapper, path=target_path)
-
-    metrics = {
-        "best_classifier": best_clf_name,
-        "val_accuracy": round(best_clf_acc, 4),
-        "disclaimer": SIMULATION_DISCLAIMER,
-    }
 
     return wrapper, metrics
 

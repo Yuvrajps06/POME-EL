@@ -65,6 +65,9 @@ PRICE_GRID_MIN_PRICE: float = 0.10   # Absolute minimum price threshold
 # Cost Scenario Parameter (M5 has no cost data)
 DEFAULT_UNIT_COST_RATIO: float = 0.60  # Default assumed cost = 60% of baseline price
 
+# Competitor Response Simulation Noise (Calibrated for ~78-83% Bayes-optimal ceiling)
+COMPETITOR_RESPONSE_NOISE: float = 0.70
+
 
 @dataclass
 class Config:
@@ -92,6 +95,7 @@ class Config:
     price_grid_num_steps: int = PRICE_GRID_NUM_STEPS
     price_grid_min_price: float = PRICE_GRID_MIN_PRICE
     default_cost_ratio: float = DEFAULT_UNIT_COST_RATIO
+    response_noise: float = COMPETITOR_RESPONSE_NOISE
 
 
 # Default config instance

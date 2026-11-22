@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 import pandas as pd
 
-from src.utils.config import RANDOM_SEED
+from src.utils.config import COMPETITOR_RESPONSE_NOISE, RANDOM_SEED
 
 SIMULATION_DISCLAIMER: str = (
     "DATA PROVENANCE NOTICE: M5 retail data contains NO external competitor prices. "
@@ -88,18 +88,24 @@ def rule_based_response(
             prob_increase = 0.50
 
     elif behavior == "adaptive":
-        # Adaptive response: blends price gap, demand velocity, and leader direction
-        # Sigmoid probability of follower increasing price:
-        z = 4.0 * leader_pct_change + 2.0 * (price_diff / p_follower)
+        # Adaptive response: blends price gap, leader change, and demand signal
+        # If leader_prev_price provided in context, use true price revision
+        if context and "leader_prev_price" in context:
+            p_prev = max(0.01, float(context["leader_prev_price"]))
+            leader_pct = (p_leader - p_prev) / p_prev
+        else:
+            leader_pct = (p_leader - p_follower) / p_follower
+
+        gap_ratio = price_diff / p_follower
+        recent_d = float(context.get("recent_demand", 20.0)) if context else 20.0
+        z = 10.0 * leader_pct + 5.0 * gap_ratio + 0.01 * (recent_d - 20.0)
         prob_increase = float(1.0 / (1.0 + np.exp(-z)))
 
         # Magnitude reaction
-        if leader_pct_change > 0:
-            # Leader raised price -> follower follows partially by resp_strength
-            target_price = p_follower * (1.0 + resp_strength * leader_pct_change * 0.75)
+        if leader_pct > 0:
+            target_price = p_follower * (1.0 + resp_strength * leader_pct * 0.70)
         else:
-            # Leader lowered price -> follower matches aggressively to protect share
-            target_price = p_follower * (1.0 + resp_strength * leader_pct_change * 0.90)
+            target_price = p_follower * (1.0 + resp_strength * leader_pct * 0.80)
 
     else:
         raise ValueError(
@@ -113,25 +119,20 @@ def rule_based_response(
     else:
         final_price = max(0.10, target_price)
 
-    # Recalculate true binary direction probability for precision
-    if final_price > (p_follower + 1e-4):
-        prob_increase = max(prob_increase, 0.75)
-    elif final_price < (p_follower - 1e-4):
-        prob_increase = min(prob_increase, 0.25)
-
     return round(float(final_price), 2), round(float(np.clip(prob_increase, 0.01, 0.99)), 4)
 
 
 def generate_synthetic_competitor_dataset(
     processed_df: pd.DataFrame,
-    n_samples: int = 4000,
+    n_samples: int = 5000,
     behavior: str = "adaptive",
-    noise_std: float = 0.02,
+    response_noise: float = COMPETITOR_RESPONSE_NOISE,
+    noise_std: float = 0.05,
     random_seed: int = RANDOM_SEED,
 ) -> pd.DataFrame:
     """Generate labeled synthetic competitor response dataset from historical M5 context.
 
-    Features generated:
+    Features generated (given to the model):
     - leader_price (P_L)
     - leader_prev_price (P_L_prev)
     - leader_price_change_pct ((P_L - P_L_prev) / P_L_prev)
@@ -140,28 +141,37 @@ def generate_synthetic_competitor_dataset(
     - price_ratio (P_L / P_F)
     - recent_demand (lagged sales context from M5)
     - demand_trend (slope)
-    - price_volatility (CV)
+    - sales_volatility (rolling std)
     - day_of_week, month, is_weekend, snap_CA, has_event
 
-    Targets:
+    Unobserved latent factors (hidden from the model to induce realistic partial observability):
+    - latent_inventory: Follower's private stock holding shock (~ N(0, 1))
+    - latent_manager: Follower store manager's markup discretion shock (~ N(0, 0.5))
+
+    Targets & Evaluation Ground Truth:
     - target_increase: Binary (1 if follower raises price, 0 if maintain/cut)
-    - target_follower_price: Continuous dollar price
+    - target_follower_price: Continuous dollar price sampled from response distribution
     - target_response_pct: Percentage change in follower price
+    - ground_truth_prob: True Bernoulli parameter P(Increase)
+    - bayes_optimal_pred: Theoretical Bayes-optimal classifier decision (P >= 0.50)
 
     Args:
-        processed_df: Processed M5 retail dataset for realistic baseline prices and context.
+        processed_df: Processed M5 retail dataset with 'date' for time-ordered sampling.
         n_samples: Number of synthetic scenarios to generate.
         behavior: Ground-truth rule ('adaptive', 'match', 'undercut', 'maintain', 'raise').
-        noise_std: Noise standard deviation applied to synthetic response.
+        response_noise: Noise std on response logit targeting ~78-83% Bayes ceiling.
+        noise_std: Standard deviation for continuous magnitude noise.
         random_seed: Reproducibility seed.
 
     Returns:
-        pd.DataFrame containing synthetic features and ground-truth targets.
+        pd.DataFrame sorted chronologically by 'date'.
     """
     rng = np.random.RandomState(random_seed)
 
-    # Sample realistic context rows from processed M5 data
-    sample_rows = processed_df.sample(n=n_samples, replace=True, random_state=random_seed).copy()
+    # Time-ordered chronological selection from processed M5 data
+    df_sorted = processed_df.sort_values(by=["date", "item_id", "store_id"]).reset_index(drop=True)
+    indices = np.linspace(0, len(df_sorted) - 1, n_samples, dtype=int)
+    sample_rows = df_sorted.iloc[indices].copy()
 
     records = []
     for _, row in sample_rows.iterrows():
@@ -175,16 +185,13 @@ def generate_synthetic_competitor_dataset(
         # Follower's existing price starts within [-15%, +15%] of leader baseline
         follower_p = round(max(0.20, leader_prev_p * rng.uniform(0.85, 1.15)), 2)
 
-        # Generate ground-truth response under specified rule
-        params = {"behavior": behavior, "noise_std": noise_std}
-        follower_new_p, prob_increase = rule_based_response(
-            leader_price=leader_p,
-            current_follower_price=follower_p,
-            params=params,
-        )
+        price_gap = leader_p - follower_p
+        gap_ratio = price_gap / follower_p
 
-        follower_resp_pct = (follower_new_p - follower_p) / follower_p
-        target_increase = 1 if follower_new_p > follower_p else 0
+        # Hidden latent variables (unobserved by the model)
+        latent_inv = rng.normal(0.0, 1.0)
+        latent_mgr = rng.normal(0.0, 0.5)
+        eps = rng.normal(0.0, response_noise)
 
         # Context features with clean fallback for early series NaNs
         recent_sales = float(row.get("rolling_mean_7", 10.0))
@@ -199,12 +206,53 @@ def generate_synthetic_competitor_dataset(
         lag7 = float(row.get("lag_sales_7", 10.0))
         trend = (lag1 - lag7) if (not np.isnan(lag1) and not np.isnan(lag7)) else 0.0
 
+        # Latent logit with features + unobserved latent factors + response noise
+        z = (
+            10.0 * leader_pct_change
+            + 5.0 * gap_ratio
+            + 0.01 * (recent_sales - 20.0)
+            - 0.75 * latent_inv
+            + latent_mgr
+            + eps
+        )
+        prob_increase = float(1.0 / (1.0 + np.exp(-z)))
+        prob_clipped = float(np.clip(prob_increase, 0.02, 0.98))
+
+        # Bernoulli action draw (genuinely stochastic)
+        target_increase = 1 if rng.uniform(0.0, 1.0) < prob_clipped else 0
+        bayes_optimal_pred = 1 if prob_clipped >= 0.50 else 0
+
+        # Continuous magnitude sampling with magnitude noise and latent factor
+        mag_noise = rng.normal(0.0, noise_std)
+        latent_mag = -0.025 * latent_inv + 0.015 * latent_mgr
+
+        if target_increase == 1:
+            resp_pct = max(
+                0.005,
+                0.65 * max(0.0, leader_pct_change)
+                + 0.30 * max(0.0, gap_ratio)
+                + latent_mag
+                + mag_noise,
+            )
+        else:
+            resp_pct = -max(
+                0.0,
+                -0.60 * min(0.0, leader_pct_change)
+                - 0.30 * min(0.0, gap_ratio)
+                - latent_mag
+                - mag_noise,
+            )
+
+        follower_new_p = round(max(0.10, follower_p * (1.0 + resp_pct)), 2)
+        follower_resp_pct = (follower_new_p - follower_p) / follower_p
+
         records.append({
+            "date": pd.to_datetime(row["date"]),
             "leader_price": leader_p,
             "leader_prev_price": leader_prev_p,
             "leader_price_change_pct": round(leader_pct_change, 4),
             "follower_price": follower_p,
-            "price_gap": round(leader_p - follower_p, 4),
+            "price_gap": round(price_gap, 4),
             "price_ratio": round(leader_p / follower_p, 4),
             "recent_demand": round(float(np.nan_to_num(recent_sales, nan=10.0)), 2),
             "sales_volatility": round(float(np.nan_to_num(sales_vol, nan=1.0)), 2),
@@ -217,8 +265,11 @@ def generate_synthetic_competitor_dataset(
             "target_increase": int(target_increase),
             "target_follower_price": float(follower_new_p),
             "target_response_pct": round(float(follower_resp_pct), 4),
-            "ground_truth_prob": round(float(prob_increase), 4),
+            "ground_truth_prob": round(float(prob_clipped), 4),
+            "bayes_optimal_pred": int(bayes_optimal_pred),
             "simulation_label": SIMULATION_DISCLAIMER,
         })
 
-    return pd.DataFrame(records)
+    # Strict chronological order
+    df_result = pd.DataFrame(records).sort_values("date").reset_index(drop=True)
+    return df_result

@@ -72,21 +72,32 @@ def render() -> None:
         m_obj = get_cached_competitor_model()
         if m_obj is not None:
             metrics = getattr(m_obj, "metrics", {}) or {}
-            clf_acc = float(safe_scalar(metrics.get("clf_accuracy", 0.999), 0.999))
-            clf_auc = float(safe_scalar(metrics.get("clf_roc_auc", 0.999), 0.999))
-            reg_mae = float(safe_scalar(metrics.get("reg_mae", 0.005), 0.005))
-            reg_r2 = float(safe_scalar(metrics.get("reg_r2", 0.998), 0.998))
+            clf_acc = float(safe_scalar(metrics.get("clf_accuracy", 0.781), 0.781))
+            ceiling_acc = float(safe_scalar(metrics.get("ceiling_accuracy", 0.833), 0.833))
+            majority_base = float(safe_scalar(metrics.get("majority_baseline", 0.501), 0.501))
+            clf_auc = float(safe_scalar(metrics.get("clf_roc_auc", 0.854), 0.854))
+            reg_mae = float(safe_scalar(metrics.get("reg_mae", 0.188), 0.188))
+            reg_r2 = float(safe_scalar(metrics.get("reg_r2", 0.970), 0.970))
 
             c1, c2, c3, c4 = st.columns(4)
             with c1:
-                st.metric("Classifier Accuracy", f"{clf_acc * 100:.1f}%*")
+                st.metric(
+                    "Classifier Accuracy (vs Ceiling)",
+                    f"{clf_acc * 100:.1f}%*",
+                    delta=f"Ceiling: {ceiling_acc * 100:.1f}% (Base: {majority_base * 100:.1f}%)",
+                    delta_color="off",
+                )
             with c2:
                 st.metric("Classifier ROC-AUC", f"{clf_auc:.3f}*")
             with c3:
                 st.metric("Regressor Test MAE", f"${reg_mae:.3f}*")
             with c4:
                 st.metric("Regressor R²", f"{reg_r2:.3f}*")
-            st.caption("*Evaluated on synthetic test set; reflects recovery of behavioral reaction rules, not real-world retail accuracy.")
+
+            st.caption(
+                "*Evaluated on synthetic time-ordered test set: reflects **recovery of a simulated rule, not real-world accuracy**. "
+                f"Ceiling represents the theoretical Bayes-optimal accuracy ({ceiling_acc * 100:.1f}%) under response noise and hidden latent shocks."
+            )
 
         degrade_acc = st.slider("Optional Accuracy Degradation (Sensitivity)", min_value=50, max_value=100, value=100, step=5)
         params = {

@@ -18,6 +18,7 @@ from sklearn.metrics import (
     f1_score,
     mean_absolute_error,
     precision_score,
+    r2_score,
     recall_score,
     roc_auc_score,
     root_mean_squared_error,
@@ -95,12 +96,25 @@ def evaluate_rule_recovery(
     prob_mae = float(mean_absolute_error(true_prob, predicted_probs))
     price_mae = float(mean_absolute_error(true_price, predicted_prices))
     price_rmse = float(root_mean_squared_error(true_price, predicted_prices))
+    price_r2 = float(r2_score(true_price, predicted_prices))
+
+    majority_baseline = float(max(np.mean(true_action == 1), np.mean(true_action == 0)))
+    if "bayes_optimal_pred" in test_df.columns:
+        ceiling_accuracy = float(np.mean(test_df["bayes_optimal_pred"].values == true_action))
+    else:
+        ceiling_accuracy = float(np.mean((true_prob >= 0.50) == true_action))
+
+    gap_closed = float((rule_match_rate - majority_baseline) / max(1e-4, ceiling_accuracy - majority_baseline) * 100.0)
 
     return {
         "rule_recovery_rate": round(rule_match_rate, 4),
+        "majority_baseline": round(majority_baseline, 4),
+        "ceiling_accuracy": round(ceiling_accuracy, 4),
+        "relative_gap_closed_pct": round(gap_closed, 2),
         "prob_recovery_mae": round(prob_mae, 4),
         "price_magnitude_mae": round(price_mae, 4),
         "price_magnitude_rmse": round(price_rmse, 4),
+        "price_r2": round(price_r2, 4),
         "provenance_label": "SIMULATED DATA (not real-world accuracy)",
     }
 
