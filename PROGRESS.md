@@ -132,54 +132,87 @@ print(f"Strategy C: Rec Price=${result_c.recommended_price:.2f}, Predicted Follo
 | **Profit vs Baseline** | Baseline (0.0%) | +0.06% | +0.09% |
 
 ### 2. Multi-Period Ground-Truth Simulation Benchmark (True-World Environment)
-*Evaluated across 40 independent 28-day simulation horizons ($N = 1,120$ periods per strategy) using Common Random Numbers (CRN) with true adaptive competitor behavior ($\sigma_{comp}=0.02$) and demand shocks ($\sigma_d=2.0$):*
+*Evaluated across 100 independent 28-day simulation horizons ($N = 2,800$ periods per strategy) using Common Random Numbers (CRN) with default Phase 6 parameters ($a=165.39, b=79.18, c=0.50, \text{cost}=\$0.83$), true adaptive competitor behavior ($\sigma_{comp}=0.02$), and demand shocks ($\sigma_d=2.0$):*
 
 | Realized Metric | Strategy A (Baseline) | Strategy B (Game Rule) | Strategy C (ML-Aware) |
 | :--- | :---: | :---: | :---: |
-| **Mean Total Profit ($)** | **$891.84** | **$891.92** | **$891.84** |
-| **95% Confidence Interval** | [$889.82, $893.87] | [$889.86, $893.99] | [$889.82, $893.87] |
-| **Profit Improvement % vs A** | Baseline (0.000%) | +0.009% | +0.000% |
-| **Profit Std Dev ($\sigma$)** | $6.53 | $6.65 | $6.53 |
-| **Downside Risk (5th %ile Profit)** | $883.95 | $883.83 | $883.95 |
-| **Minimum Realized Profit ($)** | $880.99 | $880.76 | $880.99 |
-| **Mean Daily Demand (units)** | 50.57 | 49.78 | 49.78 |
-| **Mean Realized Price ($)** | $1.46 | $1.47 | $1.47 |
+| **Mean Total Profit ($)** | **$891.25** | **$891.29** | **$890.93** |
+| **95% Confidence Interval** | [$889.97, $892.53] | [$890.00, $892.59] | [$889.97, $892.53] |
+| **Profit Improvement % vs A** | Baseline (0.000%) | +0.005% | -0.036% |
+| **Profit Std Dev ($\sigma$)** | $6.54 | $6.62 | $6.71 |
+| **Downside Risk (5th %ile Profit)** | **$882.30** | $882.08 | **$881.51** |
+| **Minimum Realized Profit ($)** | **$878.47** | $878.42 | **$877.99** |
+| **Mean Daily Demand (units)** | 50.54 | 49.75 | 49.08 |
+| **Mean Realized Price ($)** | $1.46 | $1.47 | $1.48 |
 | **Price Volatility ($\sigma_{\Delta P}$)** | 0.0196 | 0.0196 | 0.0196 |
-| **Head-to-Head Win Rate vs A** | 37.5% (15/40) | 57.5% (23/40) | **62.5% (25/40)** |
+| **Head-to-Head Record vs A (100 runs)** | — | 59 Wins / 39 Losses / 2 Ties | **11 Wins / 89 Losses / 0 Ties** |
 
-### 3. Honest Win / Loss / Tie Analysis
-- **Where Strategy C Wins (62.5% of runs)**:
-  - When the competitor reacts responsively to leader price signals, Strategy C anticipates the follower's upward price adjustment ($P_F \approx \$1.48-\$1.49$) and recommends a slightly higher leader price ($P_L^* = \$1.47-\$1.48$ vs baseline $\$1.45-\$1.46$).
-  - This captures expanded unit margins ($\approx \$0.64$ vs $\$0.62$) without losing relative market share to the competitor, delivering superior total realized profit (e.g. +$0.25 to +$0.40 per 28-day period).
-- **Where Strategy C Loses / Strategy A Wins (37.5% of runs)**:
-  - When negative exogenous demand shocks hit the category or the competitor experiences downward execution noise (failing to follow upward revisions), Strategy C's premium price experiences lower sales volume.
-  - In these downside scenarios, Strategy A's lower baseline price provides greater volume protection, earning higher realized profit (e.g. Run 1: A earned $885.86 vs C's $885.78).
-- **Where Strategies Tie**:
-  - Across periods where price grids discretize to the exact same cent or when competitor cross-price elasticity is weak ($c \to 0$), all strategies converge to identical pricing recommendations.
+### 3. Empirical Win / Loss / Tie & Downside Risk Analysis
+- **Downside Protection Claim Retracted**:
+  - The empirical data shows **no downside protection** for Strategy C under default parameters. Its 5th percentile profit ($881.51) is 79 cents lower than Baseline A ($882.30), its standard deviation ($6.71) is slightly higher than Baseline A ($6.54), and its minimum profit ($877.99) is lower than Baseline A ($878.47).
+- **Head-to-Head Performance (Strategy C loses in 89% of runs)**:
+  - Across 100 repeated simulation trajectories, Strategy C wins only 11 runs and loses 89 runs to Strategy A.
+  - The profit difference $(C - A)$ averages -$0.32 per 28-day period (min: -$1.10, max: +$0.33, std: $0.28).
+  - Strategy B (Game Rule) achieves 59 wins, 39 losses, and 2 ties vs Baseline A (mean difference +$0.04).
+- **Economic Explanation (Why Strategies Are Nearly Indistinguishable / C Slightly Underperforms)**:
+  - **Parameter Audit**: Own-price sensitivity $b = 79.18$, while cross-price sensitivity $c = 0.50$. The cross-price ratio is $c / b = 0.006315$ (i.e. cross-price elasticity is only **0.63%** of own-price elasticity).
+  - **Mechanism**: The competitor follower reacts to leader price changes (price correlation $r(P_L, P_F) = 0.3009$ for Strategy C, and $0.3146$ overall), but because $c = 0.50 \ll b = 79.18$, competitor price increases provide virtually zero demand lift to the leader ($\Delta Q = 0.50 \times \Delta P_F \approx 0.01$ units).
+  - Consequently, when Strategy C recommends a higher price ($P_L^* = \$1.48$ vs baseline $\$1.46$) to exploit predicted follower matching, the loss of demand from own-price elasticity outweighs the negligible demand gain from the competitor reaction, causing a slight net loss (-$0.32). Under default parameters, the cross-price link is economically too weak to create meaningful separation.
+
+### 4. Parameter Grid Sweep: Where Does Strategy C Beat Baseline A?
+*Evaluated across a grid of cross-price sensitivity $c \in \{0, 0.25b, 0.50b, 1.0b\}$ and competitor response strengths $\{0.25, 0.75, 1.50\}$ (40 simulations per cell, 28 periods, common seeds):*
+
+| $c$ Ratio | $c$ Value | Response Strength | Mean Profit A | Mean Profit B | Mean Profit C | Mean Diff $(C - A)$ | % Improvement | Wins / Ties / Losses (C vs A) | Outcome |
+| :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **0.00** | 0.00 | 0.25 | $877.81 | $877.81 | $877.81 | $0.00 | 0.000% | 0 / 40 / 0 | **$C \approx A$** |
+| **0.00** | 0.00 | 0.75 | $877.81 | $877.81 | $877.81 | $0.00 | 0.000% | 0 / 40 / 0 | **$C \approx A$** |
+| **0.00** | 0.00 | 1.50 | $877.81 | $877.81 | $877.81 | $0.00 | 0.000% | 0 / 40 / 0 | **$C \approx A$** |
+| **0.25b** | 19.80 | 0.25 | $1,521.64 | $1,538.69 | $1,524.51 | +$2.87 | +0.189% | 32 / 0 / 8 | **$C > A$** |
+| **0.25b** | 19.80 | 0.75 | $1,547.76 | $1,577.24 | $1,555.78 | +$8.02 | +0.518% | 39 / 0 / 1 | **$C > A$** |
+| **0.25b** | 19.80 | 1.50 | $1,552.13 | $1,585.65 | $1,566.18 | +$14.06 | +0.906% | 40 / 0 / 0 | **$C > A$** |
+| **0.50b** | 39.59 | 0.25 | $2,574.02 | $2,696.68 | $2,719.30 | +$145.28 | +5.644% | 40 / 0 / 0 | **$C > A$** |
+| **0.50b** | 39.59 | 0.75 | $2,710.57 | $3,001.43 | $2,993.44 | +$282.86 | +10.436% | 40 / 0 / 0 | **$C > A$** |
+| **0.50b** | 39.59 | 1.50 | $2,743.19 | $3,067.56 | $3,067.20 | +$324.01 | +11.812% | 40 / 0 / 0 | **$C > A$** |
+| **1.00b** | 79.18 | 0.25 | $7,208.24 | $7,728.08 | $10,478.84 | +$3,270.60 | +45.373% | 40 / 0 / 0 | **$C > A$** |
+| **1.00b** | 79.18 | 0.75 | $8,806.22 | $9,420.15 | $14,624.75 | +$5,818.54 | +66.073% | 40 / 0 / 0 | **$C > A$** |
+| **1.00b** | 79.18 | 1.50 | $9,241.88 | $14,947,783.09 | $15,602.30 | +$6,360.41 | +68.822% | 40 / 0 / 0 | **$C > A$** |
+
+- **Empirical Boundary Conclusions**:
+  - **$C \approx A$**: When cross-price elasticity is absent ($c = 0$), follower responses have zero effect on demand. Both optimizers produce identical decisions ($P_L^* = \$1.45-\$1.46$), yielding 100% ties.
+  - **$C < A$**: When cross-price elasticity is positive but negligible ($c = 0.50 \ll b = 79.18$), Strategy C suffers a slight loss (-$0.32, losing in 89% of runs) by pricing slightly too aggressively for the negligible umbrella benefit provided.
+  - **$C > A$**: Strategy C reliably dominates Baseline A once cross-price sensitivity reaches $c \ge 0.25b$ ($c \ge 19.80$). Profit improvements scale directly with both cross-price sensitivity $c$ and competitor response strength, growing from +0.19% ($c=0.25b$, strength=0.25) to +11.8% ($c=0.50b$, strength=1.50) and +68.8% ($c=1.0b$, strength=1.50).
 
 ## Phase 7 Sensitivity Analysis Results
 
-### 1. When does ML-aware pricing help?
-- **Responsive Competitors**: Strategy C provides maximum value when the competitor responds predictably and responsively ($\text{response\_strength} \ge 0.75$) to leader price movements.
-- **High Cross-Price Sensitivity ($c \ge 0.50$)**: When cross-store elasticity is substantial, leader price leadership induces the follower to raise prices in tandem, allowing the leader to capture wider unit margins ($\approx \$0.64$ vs $\$0.62$) without sacrificing category market share.
-- **Upward-Biased / Matching Follower Policy**: Under `match` or `raise` policies, Strategy C successfully exploits the follower's price umbrella, yielding consistent profit improvements over Baseline A.
+### 1. Reconciling the "58–60% Break-Even Accuracy" Claim
+- **Scenario Parameters Used in Phase 7**:
+  - $P_{L0} = \$1.38, P_{F0} = \$1.37, \text{Cost} = \$0.83, a = 165.39, b = 79.18, c = 0.50$, competitor behavior = `adaptive`, 14-period horizon, 40 repeated seeds.
+- **Empirical Difference $(C - A)$ across Accuracy Levels**:
+  - **50% Accuracy**: Mean Diff = **+$0.0625**, Std = $0.1576, 95% CI: `[+$0.0137, +$0.1113]` (A: $446.53, C: $446.59)
+  - **60% Accuracy**: Mean Diff = **-$0.1003**, Std = $0.1790, 95% CI: `[-$0.1557, -$0.0448]` (A: $446.53, C: $446.43)
+  - **70% Accuracy**: Mean Diff = **-$0.1003**, Std = $0.1790, 95% CI: `[-$0.1557, -$0.0448]` (A: $446.53, C: $446.43)
+  - **80% Accuracy**: Mean Diff = **-$0.1003**, Std = $0.1790, 95% CI: `[-$0.1557, -$0.0448]` (A: $446.53, C: $446.43)
+  - **90% Accuracy**: Mean Diff = **-$0.1003**, Std = $0.1790, 95% CI: `[-$0.1557, -$0.0448]` (A: $446.53, C: $446.43)
+- **Honest Finding**:
+  - **There is no reliable break-even accuracy threshold under the default parameter regime.**
+  - Across all accuracy levels from 50% to 90%, the profit difference between Strategy C and Strategy A never exceeds **16 cents** on a $446 profit base (an effect size of $< 0.04\%$).
+  - From 60% to 90% accuracy, the curve is **strictly flat** at -$0.10 difference.
+  - The previous assertion that Strategy C achieves break-even at "58–60% accuracy" was an unsupported artifact of negligible noise variation (cents on hundreds of dollars) and is retracted. Accuracy only modulates decision quality when the decision itself has economic leverage (i.e. when $c \ge 0.25b$).
 
-### 2. When does it hurt?
-- **Aggressive Undercutting / Price Wars**: When the true competitor follows an `undercut` policy, any attempt by the leader to test higher price points results in immediate market share loss to the competitor.
-- **Asymmetric Optimistic Forecasting Errors**: When the ML model suffers from optimistic bias (predicting the competitor will match upward when they actually maintain or discount), the leader prices too high and loses substantial volume.
-- **Competitor Reaction Latency (Delays $\ge 3$ periods)**: During delayed periods, the competitor retains old lower prices, leaving the leader temporarily uncompetitive and penalizing early-period profits.
-- **Severe Unobserved Demand Contraction**: In negative demand shock regimes ($\epsilon_d < 0$), higher prices compound customer churn; baseline pricing with lower unit prices protects sales volume better.
+### 2. When does ML-aware pricing help?
+- **Substantial Cross-Price Sensitivity ($c \ge 0.25b = 19.80$)**: Strategy C delivers clear, statistically significant profit improvements over Baseline A only when cross-price elasticity is economically meaningful ($c/b \ge 0.25$).
+- **Responsive Competitors**: Follower response strength $\ge 0.75$ combined with $c \ge 0.25b$ produces +0.52% to +68.8% profit gains.
+- **Upward-Biased / Matching Policies**: Under cooperative `match` or `raise` behaviors with high $c$, Strategy C successfully exploits the follower's price umbrella.
 
-### 3. What is the accuracy threshold?
-- **Symmetric Error Break-Even**: Under symmetric degradation, Strategy C achieves parity and begins outperforming Baseline A at **$\approx 58\% - 62\%$ accuracy**. Beyond 65% accuracy, ML-aware Stackelberg safely captures profit gains.
-- **Asymmetric Error Sensitivity**:
-  - *Optimistic Errors* (false positives on competitor price hikes) are hazardous: break-even shifts upward to **$\ge 75\%$ accuracy** because pricing high into an uncooperative market severely penalizes revenue.
-  - *Pessimistic Errors* (false negatives on competitor matching) are benign: break-even remains low (**$\approx 50\%$**) because the optimizer cautiously reverts to near-baseline prices ($P_L \approx \$1.45$), risking only unrealized upside rather than severe downside losses.
+### 3. When does it hurt?
+- **Negligible Cross-Price Sensitivity ($c \ll b$, e.g. $c=0.50$ vs $b=79.18$)**: Strategy C recommends higher prices assuming competitor matching will protect demand; with $c \approx 0$, the umbrella effect is illusory and volume drops, leading to a loss in 89% of runs.
+- **Aggressive Undercutting / Price Wars**: Under `undercut` policies, higher leader pricing directly surrenders category share.
+- **Asymmetric Optimistic Forecasting Errors**: Optimistic bias (predicting matching when follower maintains or discounts) creates substantial volume losses.
+- **Competitor Reaction Latency ($\ge 3$ periods)**: Response delays leave the leader temporarily uncompetitive, eroding early margins.
 
 ### 4. How robust is the recommendation?
-- **Exogenous Unit Cost Robustness**: Across cost variations ($C \in [\$0.65, \$1.05]$), optimal markups scale smoothly and preserve margin ranking ($P_L^* > C$ maintained throughout).
-- **Demand Parameter Uncertainty**: Even when customer own-price elasticity deviates ($\pm 50\%$), candidate price grid bounds ($[0.70 \times P_{base}, 1.30 \times P_{base}]$) and non-negative margin clipping effectively prevent catastrophic pricing errors.
-- **Volatility Tolerance**: In low-to-moderate demand volatility ($\sigma_d \le 2.0$), Strategy C maintains its profit advantage over Baseline A across repeated simulation trajectories.
+- **Exogenous Unit Cost Robustness**: Across cost variations ($C \in [\$0.65, \$1.05]$), markups scale smoothly ($P_L^* > C$ maintained throughout).
+- **Candidate Grid Clipping**: Grid bounds ($[0.70 \times P_{base}, 1.30 \times P_{base}]$) prevent runaway pricing even when model parameters are misestimated.
 
 ## Interfaces (function signatures)
 
